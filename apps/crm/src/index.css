@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+/* Scan the shared UI package so its utility classes are generated. */
+@source "../../../packages/ui/src";
+
+/* ── Dark command-centre tokens (Jeweller CRM) ──
+   Deep graphite surfaces, luminous gold primary, high-contrast ivory text. */
+@theme {
+  --color-background: #0c0d10;        /* deep graphite */
+  --color-foreground: #e9eaee;        /* near-white ink */
+  --color-card: #16171c;              /* raised card */
+  --color-muted: #1b1d23;             /* muted panel */
+  --color-muted-foreground: #8b93a3;  /* muted slate */
+  --color-border: #262932;            /* hairline */
+  --color-input: #2a2e38;
+  --color-primary: #d4af6a;           /* luminous gold accent */
+  --color-primary-foreground: #14110a;
+  --color-sidebar: #08090b;           /* darkest navigation */
+  --color-sidebar-foreground: #aab1c0;
+  --color-accent: #1f222a;
+
+  --color-success: #4ade80;
+  --color-success-bg: #10281a;
+  --color-warning: #fbbf24;
+  --color-warning-bg: #2a2010;
+  --color-danger: #f87171;
+  --color-danger-bg: #2a1414;
+  --color-info: #60a5fa;
+  --color-info-bg: #101f2e;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --radius-lg: 0.75rem;
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    font-size: 14px;
+  }
+  ::selection {
+    background: var(--color-primary);
+    color: #14110a;
+  }
+}
+
+.gold-glow {
+  box-shadow: 0 0 24px -8px rgba(212, 175, 106, 0.4);
+}

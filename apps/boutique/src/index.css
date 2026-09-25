@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+/* Scan the shared UI package so its utility classes are generated. */
+@source "../../../packages/ui/src";
+
+/* ── Dark-luxury design tokens (Customer Boutique) ──
+   Near-black warm charcoal · warm ivory ink · glowing metallic gold. */
+@theme {
+  --color-background: #0b0a08;        /* warm near-black */
+  --color-foreground: #f4efe4;        /* warm ivory */
+  --color-surface: #16130e;           /* raised warm charcoal */
+  --color-champagne: #221d15;         /* deep champagne shadow */
+  --color-sand: #1a160f;              /* warm panel */
+  --color-brand: #d4af6a;             /* glowing metallic gold */
+  --color-brand-deep: #b08d4f;        /* deep gold */
+  --color-card: #17140f;              /* card surface */
+  --color-ok: #4ea886;
+  --color-border: #2a241b;            /* warm hairline */
+  --color-border-secondary: #35301f;
+  --color-muted: #1c1810;             /* muted panel */
+  --color-muted-foreground: #a99f8b;  /* muted ivory */
+  --color-gray-300: #6b6250;
+  --color-gray-400: #837a66;
+
+  --font-serif: "Cormorant Garamond", Georgia, serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-2xl: 1.25rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "liga" 1, "calt" 1;
+  }
+  h1, h2, h3, h4, .font-serif {
+    font-family: var(--font-serif);
+  }
+  ::selection {
+    background: var(--color-brand);
+    color: #0b0a08;
+  }
+}
+
+/* Fine tracking utility for editorial eyebrow labels */
+.eyebrow {
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--color-brand);
+}
+
+/* Soft gold glow for premium accents */
+.gold-glow {
+  box-shadow: 0 0 24px -6px rgba(212, 175, 106, 0.45);
+}
+.text-gradient-gold {
+  background: linear-gradient(135deg, #f0dca6 0%, #d4af6a 45%, #b08d4f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
