@@ -2,7 +2,7 @@
   "name": "devx-boutique-os",
   "version": "1.0.0",
   "private": true,
-  "description": "DevX Boutique OS \u2014 AI-powered Jewellery Commerce & Retail Intelligence Platform (Customer Digital Boutique + Jeweller CRM)",
+  "description": "DevX Boutique OS — AI-powered Jewellery Commerce & Retail Intelligence Platform (Customer Digital Boutique + Jeweller CRM)",
   "workspaces": [
     "server",
     "apps/boutique",
@@ -27,5 +27,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "motion": "^13.4.3"
   }
 }
