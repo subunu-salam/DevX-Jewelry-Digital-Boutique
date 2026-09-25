@@ -17,4 +17,8 @@ export default defineConfig({
     allowedHosts: true,
     fs: { allow: [path.resolve(__dirname, "../..")] },
   },
+  preview: {
+    host: "0.0.0.0",
+    allowedHosts: true,
+  },
 });
