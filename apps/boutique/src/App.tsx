@@ -1,5 +1,5 @@
-import { Route, Routes } from "react-router-dom";
-import MobileShell from "./components/MobileShell";
+import { Route, Routes, useLocation } from "react-router-dom";
+import AppShell from "./components/AppShell";
 import Home from "./pages/Home";
 import Catalog from "./pages/Catalog";
 import ProductDetail from "./pages/ProductDetail";
@@ -13,23 +13,27 @@ import VisualSearch from "./pages/VisualSearch";
 import CatalogStudio from "./pages/CatalogStudio";
 import Intelligence from "./pages/Intelligence";
 
+/** Pages not yet redesigned keep a comfortable reading width on desktop. */
+const Narrow = ({ children }: { children: React.ReactNode }) => <div className="mx-auto w-full max-w-3xl md:px-8">{children}</div>;
+
 export default function App() {
+  const location = useLocation();
   return (
-    <MobileShell>
-      <Routes>
+    <AppShell>
+      <Routes location={location}>
         <Route path="/" element={<Home />} />
         <Route path="/catalog" element={<Catalog />} />
         <Route path="/product/:slug" element={<ProductDetail />} />
-        <Route path="/gold-rate" element={<GoldRate />} />
-        <Route path="/cart" element={<Cart />} />
-        <Route path="/appointments" element={<Appointments />} />
-        <Route path="/offers" element={<Offers />} />
-        <Route path="/account" element={<Account />} />
-        <Route path="/ai" element={<AIStudio />} />
-        <Route path="/ai/visual-search" element={<VisualSearch />} />
-        <Route path="/ai/catalog-studio" element={<CatalogStudio />} />
-        <Route path="/ai/intelligence" element={<Intelligence />} />
+        <Route path="/gold-rate" element={<Narrow><GoldRate /></Narrow>} />
+        <Route path="/cart" element={<Narrow><Cart /></Narrow>} />
+        <Route path="/appointments" element={<Narrow><Appointments /></Narrow>} />
+        <Route path="/offers" element={<Narrow><Offers /></Narrow>} />
+        <Route path="/account" element={<Narrow><Account /></Narrow>} />
+        <Route path="/ai" element={<Narrow><AIStudio /></Narrow>} />
+        <Route path="/ai/visual-search" element={<Narrow><VisualSearch /></Narrow>} />
+        <Route path="/ai/catalog-studio" element={<Narrow><CatalogStudio /></Narrow>} />
+        <Route path="/ai/intelligence" element={<Narrow><Intelligence /></Narrow>} />
       </Routes>
-    </MobileShell>
+    </AppShell>
   );
 }

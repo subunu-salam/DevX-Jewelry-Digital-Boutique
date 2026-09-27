@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Trash2 } from "lucide-react";
-import { MetallicButton } from "@ui";
+import { LuxuryButton } from "@/design";
 import { api } from "@/lib/api";
 import { useStore } from "@/context/store";
 import type { Branch, Storefront } from "@/lib/types";
@@ -131,7 +131,7 @@ export default function Cart() {
           </div>
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
           <div className="mt-5">
-            <MetallicButton label={submitting ? "Sending…" : "Send inquiry"} onClick={submit} />
+            <LuxuryButton size="lg" full onClick={submit}>{submitting ? "Sending…" : "Send inquiry"}</LuxuryButton>
           </div>
         </div>
       </div>

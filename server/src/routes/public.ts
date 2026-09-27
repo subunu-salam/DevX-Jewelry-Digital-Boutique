@@ -41,6 +41,12 @@ publicRouter.get("/products", async (req, res) => {
   if (q.metal) where.metal = String(q.metal);
   if (q.karat) where.karat = Number(q.karat);
   if (q.gender) where.gender = String(q.gender);
+  if (q.stone) {
+    const st = String(q.stone);
+    where.stoneType = st === "none" ? null : { contains: st, mode: "insensitive" };
+  }
+  if (q.branch) where.inventory = { some: { branchId: String(q.branch), quantity: { gt: 0 } } };
+  if (q.occasion) where.occasion = { contains: String(q.occasion), mode: "insensitive" };
   if (q.featured === "true") where.featured = true;
   if (q.isNew === "true") where.isNew = true;
   if (q.search) {
@@ -318,6 +324,7 @@ function serializeProduct(p: any, full = false) {
     featured: p.featured,
     isNew: p.isNew,
     tags: p.tags,
+    stoneType: p.stoneType,
     availability,
   };
   if (!full) return base;

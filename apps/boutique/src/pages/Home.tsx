@@ -1,19 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
-import { TrendingUp, Sparkles, Search, CalendarClock, ArrowUpRight } from "lucide-react";
+import { Camera, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
+import type { GoldRate, Offer, Product, Storefront } from "@/lib/types";
 import { aed } from "@/lib/format";
-import type { Collection, GoldRate, Offer, Product, Storefront } from "@/lib/types";
-import ProductCard from "@/components/ProductCard";
-import { CircularGallery, type GalleryItem } from "@/components/ui/circular-gallery";
-
-const reveal = {
-  initial: { opacity: 0, y: 18 },
-  whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true, margin: "-40px" },
-  transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] },
-};
+import {
+  AppointmentCard, EASE, GoldRateCard, OfferCard, OrbitCarousel, ProductGrid, SearchBar, SectionHeading, lineUp, reveal, stagger, t,
+  type OrbitItem,
+} from "@/design";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -22,142 +17,133 @@ export default function Home() {
   const [newArrivals, setNewArrivals] = useState<Product[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [gold, setGold] = useState<GoldRate | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get<Storefront>("/api/public/storefront").then(setStorefront).catch(() => {});
-    api.get<Product[]>("/api/public/products?featured=true&limit=8").then(setFeatured).catch(() => {});
-    api.get<Product[]>("/api/public/products?isNew=true&limit=6").then(setNewArrivals).catch(() => {});
-    api.get<Offer[]>("/api/public/offers").then(setOffers).catch(() => {});
-    api.get<{ rates: GoldRate[] }>("/api/public/gold/current").then((r) => setGold(r.rates.find((x) => x.karat === 22) ?? r.rates[0] ?? null)).catch(() => {});
+    Promise.allSettled([
+      api.get<Storefront>("/api/public/storefront").then(setStorefront),
+      api.get<Product[]>("/api/public/products?featured=true&limit=8").then(setFeatured),
+      api.get<Product[]>("/api/public/products?isNew=true&limit=8").then(setNewArrivals),
+      api.get<Offer[]>("/api/public/offers").then(setOffers),
+      api.get<{ rates: GoldRate[] }>("/api/public/gold/current").then((r) => setGold(r.rates.find((x) => x.karat === 22) ?? r.rates[0] ?? null)),
+    ]).finally(() => setLoading(false));
   }, []);
 
-  const galleryItems: GalleryItem[] = featured
-    .filter((p) => p.image)
-    .slice(0, 5)
-    .map((p) => ({ id: p.slug, title: p.name, subtitle: `${p.karat}K ${p.metalColor}`, image: p.image as string }));
+  const heroProduct = featured.find((p) => p.image);
+  const heroImage = heroProduct?.image ?? null;
+  const collections = storefront?.collections.filter((c) => c.heroImage) ?? [];
 
   return (
     <div>
-      {/* Hero + circular gallery */}
-      <section className="px-4 pt-1">
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-          <span className="eyebrow">Autumn Collection</span>
-          <h1 className="mt-1.5 font-serif text-[38px] leading-[1.02]">
-            The showroom,<br /><span className="italic text-brand">reimagined.</span>
-          </h1>
-        </motion.div>
+      <Hero pieces={loading ? [] : featured.length ? featured : newArrivals} gold={gold} />
 
-        <div className="relative mt-4 h-[300px] overflow-hidden">
-          {galleryItems.length > 0 ? (
-            <div className="flex h-full items-center justify-center">
-              <CircularGallery items={galleryItems} onItemClick={(slug) => navigate(`/product/${slug}`)} />
-            </div>
-          ) : (
-            <div className="mx-auto h-[224px] w-[168px] animate-pulse rounded-2xl bg-champagne" />
-          )}
-        </div>
-        <p className="-mt-1 text-center text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Swipe to explore · tap to open</p>
-      </section>
-
-      {/* Bento: gold + AI */}
-      <section className="px-4 pt-6">
-        <div className="grid grid-cols-2 gap-3">
-          <Link to="/gold-rate" className="col-span-2 flex flex-col justify-between overflow-hidden rounded-3xl border border-brand/20 bg-gradient-to-br from-surface to-background p-5 gold-glow">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-[0.28em] text-brand/80">Live Gold Rate · 22K</span>
-              <TrendingUp className="size-4 text-brand" />
-            </div>
-            <div className="mt-4">
-              <div className="font-serif text-4xl text-gradient-gold">{gold?.pricePerGram ? aed(gold.pricePerGram) : "—"}</div>
-              <div className="mt-0.5 text-xs text-muted-foreground">per gram · live from market feed</div>
-            </div>
-          </Link>
-          <Link to="/ai/visual-search" className="flex flex-col justify-between rounded-3xl bg-gradient-to-br from-brand to-brand-deep p-4 text-[#14110a] gold-glow">
-            <Search className="size-5" />
-            <div className="mt-3"><div className="font-serif text-lg leading-tight">Visual Search</div><div className="text-[11px] text-[#14110a]/75">Find it from a photo</div></div>
-          </Link>
-          <Link to="/ai" className="flex flex-col justify-between rounded-3xl border border-border bg-surface p-4">
-            <Sparkles className="size-5 text-brand" />
-            <div className="mt-3"><div className="font-serif text-lg leading-tight">AI Studio</div><div className="text-[11px] text-muted-foreground">Catalog &amp; insights</div></div>
-          </Link>
-        </div>
-      </section>
-
-      {/* Collections */}
-      {storefront && storefront.collections.filter((c) => c.heroImage).length > 0 && (
-        <motion.section {...reveal} className="pt-8">
-          <div className="mb-3 flex items-end justify-between px-4">
-            <h2 className="font-serif text-[26px]">Collections</h2>
-          </div>
-          <div className="flex gap-3 overflow-x-auto px-4 pb-1" style={{ scrollbarWidth: "none" }}>
-            {storefront.collections.filter((c) => c.heroImage).map((c: Collection) => (
-              <button key={c.id} onClick={() => navigate(`/catalog?collection=${c.slug}`)} className="min-w-[150px] text-left">
-                <div className="aspect-[3/4] overflow-hidden rounded-2xl bg-champagne">
-                  <img src={c.heroImage as string} alt="" className="size-full object-cover" />
-                </div>
-                <div className="mt-2 font-serif text-[17px]">{c.name}</div>
-                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{c.description}</div>
-              </button>
-            ))}
-          </div>
-        </motion.section>
-      )}
-
-      {/* New arrivals */}
-      <motion.section {...reveal} className="px-4 pt-8">
-        <div className="mb-4 flex items-end justify-between">
-          <h2 className="font-serif text-[26px]">New Arrivals</h2>
-          <Link to="/catalog?filter=new" className="text-[13px] font-medium text-brand-deep">View all</Link>
-        </div>
-        <div className="grid grid-cols-2 gap-x-3.5 gap-y-8">
-          {newArrivals.slice(0, 4).map((p) => <ProductCard key={p.id} product={p} />)}
-        </div>
-      </motion.section>
-
-      {/* Appointment CTA */}
-      <motion.section {...reveal} className="px-4 pt-8">
-        <div className="flex items-center gap-3.5 rounded-3xl border border-border bg-surface p-5">
-          <CalendarClock className="size-6 text-brand" strokeWidth={1.6} />
-          <div className="flex-1">
-            <div className="font-serif text-xl leading-tight">Book a private viewing</div>
-            <div className="text-[12.5px] text-muted-foreground">Unhurried time with an advisor</div>
-          </div>
-          <button onClick={() => navigate("/appointments")} className="rounded-full bg-gradient-to-br from-brand to-brand-deep px-5 py-2.5 text-sm font-semibold text-[#14110a]">Book</button>
-        </div>
-      </motion.section>
-
-      {/* Offers */}
-      {offers.length > 0 && (
-        <motion.section {...reveal} className="pt-8">
-          <div className="mb-3 flex items-end justify-between px-4">
-            <h2 className="font-serif text-[26px]">Offers</h2>
-            <Link to="/offers" className="text-[13px] font-medium text-brand-deep">All</Link>
-          </div>
-          <div className="flex gap-3 overflow-x-auto px-4 pb-1" style={{ scrollbarWidth: "none" }}>
-            {offers.map((o) => (
-              <Link key={o.id} to="/offers" className="min-w-[230px] overflow-hidden rounded-2xl border border-border bg-surface">
-                <div className="aspect-[16/10] bg-champagne">{o.image && <img src={o.image} alt="" className="size-full object-cover opacity-90" />}</div>
-                <div className="p-3.5">
-                  <div className="font-serif text-[16px] leading-tight">{o.title}</div>
-                  <div className="mt-1 inline-flex items-center gap-1 text-[12px] text-brand-deep">Code {o.code} <ArrowUpRight className="size-3.5" /></div>
-                </div>
+      {/* Category rail — big serif words, scrolls sideways on phones */}
+      {storefront && storefront.categories.length > 0 && (
+        <motion.section {...reveal} className="mx-auto max-w-[1320px] px-4 pt-16 md:px-8 md:pt-24">
+          <div className="no-scrollbar -mx-4 flex gap-8 overflow-x-auto border-y border-border px-4 py-5 md:mx-0 md:justify-between md:px-0">
+            {storefront.categories.map((c) => (
+              <Link key={c.id} to={`/catalog?category=${c.slug}`} className="group relative shrink-0 font-serif text-[26px] italic text-foreground/70 transition-colors duration-500 hover:text-foreground md:text-[32px]">
+                {c.name}
+                <span className="absolute -bottom-1 left-0 h-px w-full origin-left scale-x-0 bg-brand transition-transform duration-700 ease-[var(--ease-lux)] group-hover:scale-x-100" />
               </Link>
             ))}
           </div>
         </motion.section>
       )}
 
-      {/* Featured signature pieces */}
-      {featured.length > 0 && (
-        <motion.section {...reveal} className="px-4 pt-8">
-          <h2 className="mb-4 font-serif text-[26px]">Signature Pieces</h2>
-          <div className="grid grid-cols-2 gap-x-3.5 gap-y-8">
-            {featured.slice(0, 4).map((p) => <ProductCard key={p.id} product={p} />)}
-          </div>
-        </motion.section>
+      {/* New arrivals */}
+      <section className="mx-auto max-w-[1320px] px-4 pt-16 md:px-8 md:pt-24">
+        <SectionHeading title="New arrivals" subtitle="Pieces that arrived in our boutiques this season." action={{ label: "View all", to: "/catalog?filter=new" }} />
+        <ProductGrid products={newArrivals.slice(0, 4)} loading={loading} columns={4} />
+      </section>
+
+
+      {/* Gold + Studio */}
+      <section className="mx-auto grid max-w-[1320px] gap-4 px-4 pt-20 md:grid-cols-[1.2fr_1fr_1fr] md:gap-5 md:px-8 md:pt-28">
+        <motion.div {...reveal}><GoldRateCard rate={gold} variant="dark" className="h-full" /></motion.div>
+        <motion.div {...reveal} transition={t(0.8, 0.08)}>
+          <StudioTile to="/ai/visual-search" icon={<Camera className="size-5" strokeWidth={1.5} />} title="Visual search" body="Photograph a piece you love; we'll find its closest match in our boutiques." />
+        </motion.div>
+        <motion.div {...reveal} transition={t(0.8, 0.16)}>
+          <StudioTile to="/ai" icon={<Sparkles className="size-5" strokeWidth={1.5} />} title="AI Studio" body="Style discovery and recommendations, shaped by what you save." />
+        </motion.div>
+      </section>
+
+      {/* Signature pieces */}
+      {(loading || featured.length > 0) && (
+        <section className="mx-auto max-w-[1320px] px-4 pt-20 md:px-8 md:pt-28">
+          <SectionHeading title="Signature pieces" subtitle="The designs our advisors are asked about most." action={{ label: "Shop all", to: "/catalog" }} />
+          <ProductGrid products={featured.slice(0, 8)} loading={loading} columns={4} />
+        </section>
       )}
 
-      <div className="px-4 pt-10 text-center text-[11px] text-muted-foreground">Powered by DevX Boutique OS · one database with the CRM</div>
+
+      {/* Appointment */}
+      <motion.section {...reveal} className="mx-auto max-w-[1320px] px-4 pt-20 md:px-8 md:pt-28">
+        <AppointmentCard image={featured[1]?.image ?? heroImage} />
+      </motion.section>
     </div>
+  );
+}
+
+/* ───────────────────────── Hero ───────────────────────── */
+
+const fadeUp = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: t(0.9) } };
+
+function Hero({ pieces, gold }: { pieces: Product[]; gold: GoldRate | null }) {
+  const navigate = useNavigate();
+  const items: OrbitItem[] = pieces
+    .filter((p) => p.image)
+    .slice(0, 8)
+    .map((p) => ({
+      id: p.slug,
+      title: p.name,
+      subtitle: `${p.karat}K ${p.metalColor}`,
+      meta: p.priceMode === "INQUIRY" ? "Price on request" : aed(p.discount ? p.basePrice * (1 - p.discount / 100) : p.basePrice),
+      image: p.image as string,
+    }));
+
+  return (
+    <section className="relative overflow-hidden pt-5">
+      <motion.div variants={stagger(0.12, 0.1)} initial="hidden" animate="show" className="px-4">
+        <h1 className="font-serif text-[46px] leading-[0.95] tracking-[-0.02em]">
+          {["Find your", "signature."].map((line) => (
+            <span key={line} className="block overflow-hidden pb-[0.08em]">
+              <motion.span variants={lineUp} className="block">{line}</motion.span>
+            </span>
+          ))}
+        </h1>
+        <motion.p variants={fadeUp} className="mt-3 font-serif text-[19px] italic text-muted-foreground">
+          Crafted in gold. Made for your moments.
+        </motion.p>
+      </motion.div>
+
+      {/* The stage: the carousel gets the full width of the app */}
+      <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 1.4, ease: EASE, delay: 0.25 }} className="relative mt-4">
+        <OrbitCarousel items={items} size="stage" onOpen={(slug) => navigate(`/product/${slug}`)} />
+      </motion.div>
+
+      <motion.div variants={fadeUp} initial="hidden" animate="show" className="mt-5 flex items-center gap-2 px-4">
+        <SearchBar className="flex-1" placeholder="Search rings, necklaces, 22K…" />
+        {gold?.pricePerGram && (
+          <Link to="/gold-rate" className="shrink-0 rounded-full bg-night px-4 py-2 text-on-night transition-transform duration-500 active:scale-95">
+            <span className="block text-[9.5px] leading-none text-brand-soft">22K today</span>
+            <span className="block font-serif text-[16px] leading-tight tabular-nums">AED {gold.pricePerGram.toFixed(2)}</span>
+          </Link>
+        )}
+      </motion.div>
+    </section>
+  );
+}
+
+function StudioTile({ to, icon, title, body }: { to: string; icon: React.ReactNode; title: string; body: string }) {
+  return (
+    <Link to={to} className="group flex h-full flex-col justify-between gap-10 rounded-[22px] border border-border bg-surface p-6 transition-all duration-700 hover:border-border-secondary hover:shadow-[var(--shadow-lift)]">
+      <span className="flex size-11 items-center justify-center rounded-full bg-champagne text-brand-deep transition-transform duration-700 group-hover:rotate-[8deg]">{icon}</span>
+      <div>
+        <div className="font-serif text-[28px] leading-none">{title}</div>
+        <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">{body}</p>
+      </div>
+    </Link>
   );
 }

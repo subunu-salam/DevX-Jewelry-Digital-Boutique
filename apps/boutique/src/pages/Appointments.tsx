@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { CalendarCheck, Check } from "lucide-react";
-import { MetallicButton } from "@ui";
+import { LuxuryButton } from "@/design";
 import { api } from "@/lib/api";
 import { useStore } from "@/context/store";
 import type { Branch, Storefront } from "@/lib/types";
@@ -96,7 +96,7 @@ export default function Appointments() {
         </div>
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
         <div className="mt-6">
-          <MetallicButton label={submitting ? "Booking…" : "Book visit"} onClick={submit} />
+          <LuxuryButton size="lg" full onClick={submit}>{submitting ? "Booking…" : "Book visit"}</LuxuryButton>
         </div>
       </div>
 

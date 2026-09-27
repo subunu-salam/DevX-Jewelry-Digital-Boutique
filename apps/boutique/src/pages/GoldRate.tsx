@@ -102,24 +102,24 @@ export default function GoldRate() {
             <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#b08d57" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#b08d57" stopOpacity={0} />
+                  <stop offset="0%" stopColor="var(--color-brand)" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="var(--color-brand)" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#7c7364" }} minTickGap={40} axisLine={false} tickLine={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} minTickGap={40} axisLine={false} tickLine={false} />
               <YAxis
                 domain={[Math.floor(min - 3), Math.ceil(max + 3)]}
-                tick={{ fontSize: 11, fill: "#7c7364" }}
+                tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
                 width={44}
                 axisLine={false}
                 tickLine={false}
                 tickFormatter={(v) => `${v}`}
               />
               <Tooltip
-                contentStyle={{ borderRadius: 12, border: "1px solid #e7e1d6", fontSize: 13 }}
+                contentStyle={{ borderRadius: 12, border: "1px solid var(--color-border)", background: "var(--color-surface)", color: "var(--color-foreground)", fontSize: 13 }}
                 formatter={(v: number) => [aed(v), `${karat}K / g`]}
               />
-              <Area type="monotone" dataKey="price" stroke="#b08d57" strokeWidth={2} fill="url(#gold)" />
+              <Area type="monotone" dataKey="price" stroke="var(--color-brand)" strokeWidth={2} fill="url(#gold)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { LogOut, User } from "lucide-react";
-import { MetallicButton } from "@ui";
+import { LuxuryButton } from "@/design";
 import { useStore } from "@/context/store";
 
 export default function Account() {
@@ -80,7 +80,7 @@ export default function Account() {
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="pt-2">
-          <MetallicButton label={busy ? "Please…" : mode === "login" ? "Sign in" : "Register"} onClick={submit} />
+          <LuxuryButton size="lg" full onClick={submit}>{busy ? "Please…" : mode === "login" ? "Sign in" : "Register"}</LuxuryButton>
         </div>
         <button
           onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}
