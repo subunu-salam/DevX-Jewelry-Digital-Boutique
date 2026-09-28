@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion, useMotionValueEvent, useScroll } from "motion/react";
-import { Home, LayoutGrid, Search, ShoppingBag, Sparkles, TrendingUp, User } from "lucide-react";
+import { Home, LayoutGrid, ShoppingBag, Sparkles, TrendingUp, User } from "lucide-react";
 import { cn } from "@ui";
 import { useStore } from "@/context/store";
 import { Brand } from "./Brand";
 import { IconButton } from "./Button";
-import { Modal } from "./Overlay";
 import { SearchBar } from "./SearchBar";
 import { ThemeToggle } from "./Theme";
 
@@ -51,7 +50,6 @@ export function Navbar() {
   const { scrollY } = useScroll();
   const [scrolled, setScrolled] = useState(false);
   const [hidden, setHidden] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
 
   useMotionValueEvent(scrollY, "change", (y) => {
     const prev = scrollY.getPrevious() ?? 0;
@@ -59,7 +57,7 @@ export function Navbar() {
     setHidden(y > 160 && y > prev + 2);
     if (y < prev - 2) setHidden(false);
   });
-  useEffect(() => { setSearchOpen(false); setHidden(false); }, [pathname]);
+  useEffect(() => { setHidden(false); }, [pathname]);
 
   return (
     <>
@@ -73,24 +71,14 @@ export function Navbar() {
       >
         <div className="mx-auto flex h-[64px] max-w-[1320px] items-center gap-3 px-4 md:h-[74px] md:px-8">
           <Brand compact />
-          <div className="ml-auto flex items-center gap-2">
+          <SearchBar size="sm" placeholder="Search jewellery…" className="ml-auto min-w-0 max-w-[230px] flex-1" />
+          <div className="flex shrink-0 items-center gap-2">
             <ThemeToggle />
-            <IconButton label="Search" onClick={() => setSearchOpen(true)}><Search className="size-[17px]" strokeWidth={1.7} /></IconButton>
             <IconButton label="Account" active={pathname.startsWith("/account")} onClick={() => navigate("/account")}><User className="size-[17px]" strokeWidth={1.7} /></IconButton>
           </div>
         </div>
       </motion.header>
 
-      <Modal open={searchOpen} onClose={() => setSearchOpen(false)} title="Search the collection">
-        <SearchBar size="lg" autoFocus placeholder="Rings, emerald, 22K necklace…" />
-        <div className="mt-5 flex flex-wrap gap-2">
-          {["Rings", "Necklaces", "Diamond", "Emerald", "Bridal", "22K"].map((s) => (
-            <button key={s} onClick={() => navigate(`/catalog?search=${encodeURIComponent(s)}`)} className="rounded-full border border-border px-3.5 py-1.5 text-[13px] text-foreground/80 transition hover:border-foreground/40 hover:text-foreground">
-              {s}
-            </button>
-          ))}
-        </div>
-      </Modal>
     </>
   );
 }

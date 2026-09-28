@@ -123,8 +123,7 @@ function Hero({ pieces, gold }: { pieces: Product[]; gold: GoldRate | null }) {
         <OrbitCarousel items={items} size="stage" onOpen={(slug) => navigate(`/product/${slug}`)} />
       </motion.div>
 
-      <motion.div variants={fadeUp} initial="hidden" animate="show" className="mt-5 flex items-center gap-2 px-4">
-        <SearchBar className="flex-1" placeholder="Search rings, necklaces, 22K…" />
+      <motion.div variants={fadeUp} initial="hidden" animate="show" className="mt-4 flex justify-center px-4">
         {gold?.pricePerGram && (
           <Link to="/gold-rate" className="shrink-0 rounded-full bg-night px-4 py-2 text-on-night transition-transform duration-500 active:scale-95">
             <span className="block text-[9.5px] leading-none text-brand-soft">22K today</span>
