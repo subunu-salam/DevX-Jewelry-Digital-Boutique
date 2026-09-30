@@ -5,7 +5,7 @@ import { cn } from "@ui";
 
 type Theme = "light" | "dark";
 const KEY = "aurelia_theme";
-const META = { light: "#F7F2E8", dark: "#13110E" };
+const META = { light: "#F7E6DA", dark: "#1A1310" };
 
 const Ctx = createContext<{ theme: Theme; toggle: () => void; setTheme: (t: Theme) => void }>({ theme: "light", toggle: () => {}, setTheme: () => {} });
 export const useTheme = () => useContext(Ctx);

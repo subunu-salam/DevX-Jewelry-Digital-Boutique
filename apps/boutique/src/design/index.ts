@@ -20,4 +20,8 @@ export { ThemeProvider, ThemeToggle, useTheme } from "./Theme";
 export { OrbitCarousel } from "./OrbitCarousel";
 export type { OrbitItem } from "./OrbitCarousel";
 export { InstallPrompt } from "./InstallPrompt";
+export { Showcase } from "./Showcase";
+export { OpeningScreen } from "./OpeningScreen";
+export type { ShowcaseItem } from "./Showcase";
+export { flyToCart, CART_BUMP_EVENT } from "./FlyToCart";
 export { Footer } from "./Footer";

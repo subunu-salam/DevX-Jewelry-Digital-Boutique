@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CART_BUMP_EVENT } from "./FlyToCart";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion, useMotionValueEvent, useScroll } from "motion/react";
 import { Home, LayoutGrid, ShoppingBag, Sparkles, TrendingUp, User } from "lucide-react";
@@ -89,6 +90,12 @@ export function Navbar() {
  */
 export function TabBar() {
   const { pathname } = useLocation();
+  const [bump, setBump] = useState(0);
+  useEffect(() => {
+    const on = () => setBump((b) => b + 1);
+    window.addEventListener(CART_BUMP_EVENT, on);
+    return () => window.removeEventListener(CART_BUMP_EVENT, on);
+  }, []);
   return (
     <nav aria-label="Primary" className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[var(--app-w)] px-3 pb-[calc(10px+env(safe-area-inset-bottom))]">
       <motion.div
@@ -117,9 +124,15 @@ export function TabBar() {
               <motion.span
                 animate={{ y: active ? -17 : 0, scale: active ? 1.05 : 1 }}
                 transition={{ type: "spring", stiffness: 420, damping: 28 }}
+                data-cart-target={n.to === "/cart" ? "" : undefined}
                 className={cn("relative z-10 transition-colors duration-300", active ? "text-[#FFFDF8]" : "text-on-night/55")}
               >
+                {n.to === "/cart" && bump > 0 && (
+                  <motion.span key={bump} aria-hidden initial={{ scale: 0.6, opacity: 0.7 }} animate={{ scale: 2.2, opacity: 0 }} transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }} className="absolute inset-0 rounded-full border border-brand" />
+                )}
+                <motion.span key={n.to === "/cart" ? `bag-${bump}` : n.to} className="block" initial={n.to === "/cart" && bump > 0 ? { scale: 1.35, rotate: -10 } : false} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 500, damping: 12 }}>
                 <n.icon className="size-[21px]" strokeWidth={active ? 2 : 1.6} />
+                </motion.span>
                 {n.to === "/cart" && <BagCount className="-right-2.5 -top-1.5 ring-2 ring-night" />}
               </motion.span>
               <span className={cn("relative z-10 transition-colors duration-300", active ? "text-brand-soft" : "text-on-night/55")}>{n.label}</span>

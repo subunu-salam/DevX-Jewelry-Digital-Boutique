@@ -7,7 +7,7 @@ import { cn } from "@ui";
 import { api } from "@/lib/api";
 import { useStore } from "@/context/store";
 import type { Product } from "@/lib/types";
-import { Badge, Breadcrumb, EASE, LuxuryButton, Price, ProductGrid, SectionHeading, stagger, t, useToast } from "@/design";
+import { Badge, Breadcrumb, EASE, LuxuryButton, Price, ProductGrid, SectionHeading, flyToCart, stagger, t, useToast } from "@/design";
 
 export default function ProductDetail() {
   const { slug } = useParams();
@@ -124,6 +124,7 @@ function ZoomStage({ src, alt, dir, onNext, onPrev, count, onExpand }: { src?: s
       ref={ref}
       onPointerMove={onMove}
       onPointerLeave={() => setZoom(null)}
+      data-fly-source
       className={cn("group relative aspect-[4/5] overflow-hidden rounded-[24px] bg-champagne", zoom ? "cursor-zoom-in" : "")}
     >
       <AnimatePresence initial={false} custom={dir} mode="popLayout">
@@ -218,6 +219,7 @@ function InfoPanel({ product }: { product: Product }) {
   ].filter(Boolean) as string[];
 
   const addInquiry = () => {
+    flyToCart(document.querySelector("[data-fly-source]"), product.image);
     addToCart(product);
     setAdded(true);
     toast({ title: "Added to your inquiry", body: product.name, image: product.image, action: { label: "View bag", to: "/cart" } });
@@ -367,7 +369,7 @@ function MobileBar({ product }: { product: Product }) {
       >
         <Heart className={cn("size-5", isSaved ? "fill-brand text-brand" : "")} strokeWidth={1.6} />
       </button>
-      <LuxuryButton size="lg" className="h-12 flex-1" onClick={() => { addToCart(product); toast({ title: "Added to your inquiry", body: product.name, image: product.image, action: { label: "View bag", to: "/cart" } }); }}>
+      <LuxuryButton size="lg" className="h-12 flex-1" onClick={() => { flyToCart(document.querySelector("[data-fly-source]"), product.image); addToCart(product); toast({ title: "Added to your inquiry", body: product.name, image: product.image, action: { label: "View bag", to: "/cart" } }); }}>
         Add to inquiry
       </LuxuryButton>
     </motion.div>
