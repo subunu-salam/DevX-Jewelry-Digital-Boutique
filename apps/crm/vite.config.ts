@@ -17,8 +17,11 @@ export default defineConfig({
     allowedHosts: true,
     fs: { allow: [path.resolve(__dirname, "../..")] },
   },
+  // Render serves the CRM with `vite preview`; Vite blocks unknown hostnames,
+  // so list the Render domains explicitly (".onrender.com" covers any subdomain).
   preview: {
     host: "0.0.0.0",
-    allowedHosts: true,
+    port: Number(process.env.PORT) || 5174,
+    allowedHosts: [".onrender.com", "devx-jewelry-digital-boutique-crm.onrender.com", "localhost"],
   },
 });
