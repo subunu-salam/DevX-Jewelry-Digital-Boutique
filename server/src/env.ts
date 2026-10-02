@@ -18,7 +18,8 @@ export const env = {
   CORS_ORIGINS: (process.env.CORS_ORIGINS ??
     "http://localhost:5173,http://localhost:5174")
     .split(",")
-    .map((s) => s.trim())
+    // tolerate spaces, quotes and trailing slashes in the Render setting
+    .map((s) => s.trim().replace(/^["']|["']$/g, "").replace(/\/+$/, "").toLowerCase())
     .filter(Boolean),
   GOLD_PROVIDER: process.env.GOLD_PROVIDER ?? "gold-api", // keyless default (gold-api.com)
   USD_AED: Number(process.env.USD_AED ?? 3.6725),

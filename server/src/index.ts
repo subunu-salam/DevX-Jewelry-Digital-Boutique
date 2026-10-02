@@ -11,13 +11,22 @@ import { startGoldWorker } from "./lib/goldIngest.js";
 
 const app = express();
 
+/** An origin is allowed if it's listed in CORS_ORIGINS (entries may use a "*." wildcard,
+ *  e.g. https://*.onrender.com) or it's one of this project's own Render sites. */
+function isAllowedOrigin(origin: string): boolean {
+  const o = origin.replace(/\/+$/, "").toLowerCase();
+  if (env.CORS_ORIGINS.includes(o)) return true;
+  if (env.CORS_ORIGINS.some((p) => p.includes("*") && new RegExp("^" + p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[a-z0-9-]+") + "$").test(o))) return true;
+  // Built-in: the boutique + CRM static sites of this project on Render
+  return /^https:\/\/devx-(jewelry-digital-boutique|boutique)[a-z0-9-]*\.onrender\.com$/.test(o);
+}
+
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Allow same-origin / server-to-server (no origin) and any configured origin.
-      if (!origin || env.CORS_ORIGINS.includes(origin) || env.NODE_ENV !== "production") {
-        return cb(null, true);
-      }
+      // Allow same-origin / server-to-server (no origin), dev, and allowed origins.
+      if (!origin || env.NODE_ENV !== "production" || isAllowedOrigin(origin)) return cb(null, true);
+      console.warn(`[cors] blocked origin: ${origin} — add it to CORS_ORIGINS`);
       return cb(null, false);
     },
     credentials: true,
@@ -25,7 +34,9 @@ app.use(
 );
 app.use(express.json({ limit: "8mb" }));
 
-app.get("/health", (_req, res) => res.json({ ok: true, service: "devx-boutique-api", time: new Date().toISOString() }));
+app.get("/health", (_req, res) =>
+  res.json({ ok: true, service: "devx-boutique-api", time: new Date().toISOString(), corsOrigins: env.CORS_ORIGINS }),
+);
 
 // Boutique (public) surface
 app.use("/api/public", publicRouter);
