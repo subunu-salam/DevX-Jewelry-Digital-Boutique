@@ -6,6 +6,12 @@ import { api } from "@/lib/api";
 import type { Product, Storefront } from "@/lib/types";
 import { EASE, LuxuryButton, OpeningScreen, Price, lineUp, reveal, stagger, t } from "@/design";
 
+/**
+ * Centre arch image. Leave null to use the first collection's cover photo, or set a URL
+ * (e.g. "/hero/centre.jpg" placed in apps/boutique/public/hero/) to choose your own.
+ */
+const HERO_CENTRE_IMAGE: string | null = null;
+
 /** Peach & Gold landing — first impression for private clients. */
 export default function Home() {
   const navigate = useNavigate();
@@ -46,12 +52,10 @@ export default function Home() {
           </motion.p>
         </motion.div>
 
-        <Triptych pieces={pieces.slice(0, 3)} loading={!loaded} />
+        <Triptych pieces={pieces.slice(0, 3)} centreImage={HERO_CENTRE_IMAGE ?? collections[0]?.heroImage} centreLink={collections[0] ? `/catalog?collection=${collections[0].slug}` : undefined} loading={!loaded} />
 
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={t(0.9, 0.9)}>
-          <LuxuryButton size="lg" full onClick={() => navigate("/catalog")} iconRight={<ArrowRight className="size-4" />}>
-            Enter the collection
-          </LuxuryButton>
+          <EliteCTA label="Enter the collection" onClick={() => navigate("/catalog")} />
         </motion.div>
       </section>
 
@@ -146,12 +150,16 @@ function Rule({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Three arches side by side (the middle one taller), each a featured piece.
- * They rise in one after another; the centre arch slowly breathes.
+ * Three arches side by side (the middle one taller). The centre arch carries a bold
+ * editorial image; the sides are featured pieces. They rise in one after another.
  */
-function Triptych({ pieces, loading }: { pieces: Product[]; loading: boolean }) {
+function Triptych({ pieces, centreImage, centreLink, loading }: { pieces: Product[]; centreImage?: string | null; centreLink?: string; loading: boolean }) {
   const reduced = useReducedMotion();
-  const slots = [0, 1, 2].map((k) => pieces[k]);
+  const slots: { image?: string | null; to?: string; alt: string }[] = [
+    { image: pieces[0]?.image, to: pieces[0] && `/product/${pieces[0].slug}`, alt: pieces[0]?.name ?? "" },
+    { image: centreImage ?? pieces[1]?.image, to: centreLink ?? (pieces[1] && `/product/${pieces[1].slug}`), alt: "The collection" },
+    { image: pieces[2]?.image, to: pieces[2] && `/product/${pieces[2].slug}`, alt: pieces[2]?.name ?? "" },
+  ];
   return (
     <div className="grid grid-cols-3 items-end gap-2">
       {slots.map((p, k) => {
@@ -163,27 +171,79 @@ function Triptych({ pieces, loading }: { pieces: Product[]; loading: boolean }) 
             className={`relative overflow-hidden bg-champagne ${k === 1 ? "aspect-[8/15]" : "aspect-[2/3]"}`}
             style={{ borderRadius: "999px 999px 10px 10px" }}
           >
-            {loading || !p?.image ? (
+            {loading || !p.image ? (
               <div className="skeleton absolute inset-0" />
             ) : (
               <motion.img
                 src={p.image}
-                alt={p.name}
+                alt={p.alt}
                 loading={k === 1 ? "eager" : "lazy"}
                 initial={{ scale: 1.15 }}
                 animate={reduced ? { scale: 1 } : k === 1 ? { scale: [1.04, 1.1, 1.04] } : { scale: 1 }}
                 transition={k === 1 && !reduced ? { duration: 14, ease: "easeInOut", repeat: Infinity } : { duration: 2, ease: EASE }}
-                className="absolute inset-0 size-full object-cover transition-[filter] duration-700 group-hover:brightness-95"
+                className={`absolute inset-0 size-full object-cover ${k === 1 ? "contrast-[1.06] saturate-[1.08]" : ""}`}
               />
             )}
           </motion.div>
         );
-        return p ? (
-          <Link key={k} to={`/product/${p.slug}`} aria-label={p.name} className="group block">{body}</Link>
+        return p.to ? (
+          <Link key={k} to={p.to} aria-label={p.alt} className="group block">{body}</Link>
         ) : (
           <div key={k}>{body}</div>
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Elite call-to-action: espresso pill with an inset gold hairline, tracked capitals,
+ * a gold medallion for the arrow, and a slow light sweep (on arrival and on hover).
+ */
+function EliteCTA({ label, onClick }: { label: string; onClick: () => void }) {
+  const reduced = useReducedMotion();
+  return (
+    <motion.button
+      onClick={onClick}
+      initial="rest"
+      animate="rest"
+      whileHover="hover"
+      whileTap="press"
+      variants={{ rest: { scale: 1 }, hover: { scale: 1 }, press: { scale: 0.985 } }}
+      className="group relative flex h-[60px] w-full items-center justify-between overflow-hidden rounded-full bg-night pl-7 pr-2 text-on-night shadow-[0_22px_40px_-22px_rgba(46,33,27,.8)]"
+    >
+      {/* inset gold hairline, drawn in on arrival */}
+      <motion.span
+        aria-hidden
+        initial={{ opacity: 0, scale: 0.97 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 1.2, ease: EASE, delay: 1.1 }}
+        className="pointer-events-none absolute inset-[4px] rounded-full border border-brand/45"
+      />
+      {/* light sweep: once on arrival, again on hover */}
+      {!reduced && (
+        <motion.span
+          aria-hidden
+          initial={{ x: "-130%" }}
+          variants={{
+            rest: { x: "330%", transition: { duration: 1.6, ease: [0.65, 0, 0.35, 1], delay: 1.6 } },
+            hover: { x: ["-130%", "330%"], transition: { duration: 1.1, ease: [0.65, 0, 0.35, 1] } },
+          }}
+          className="pointer-events-none absolute inset-y-0 left-0 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-[rgba(232,195,172,.22)] to-transparent"
+        />
+      )}
+      <span className="relative flex items-center gap-3">
+        <span aria-hidden className="h-px w-5 bg-brand transition-all duration-700 ease-[var(--ease-lux)] group-hover:w-8" />
+        <span className="text-[11.5px] font-semibold uppercase tracking-[0.3em]">{label}</span>
+      </span>
+      <motion.span
+        aria-hidden
+        variants={{ rest: { x: 0 }, hover: { x: 3 }, press: { x: 5 } }}
+        transition={{ type: "spring", stiffness: 300, damping: 20 }}
+        className="relative flex size-[44px] items-center justify-center rounded-full bg-brand text-[#FFF8F2] shadow-[0_6px_16px_-6px_rgba(169,131,76,.8)]"
+      >
+        <ArrowRight className="size-4" />
+      </motion.span>
+    </motion.button>
   );
 }
