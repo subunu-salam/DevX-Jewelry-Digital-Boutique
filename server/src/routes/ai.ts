@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { env } from "../env.js";
 import { requireStaff, optionalAuth } from "../middleware/auth.js";
+import { resolveTryOn, type TryOnType } from "../lib/tryon.js";
 
 export const aiRouter = Router();
 
@@ -193,10 +194,125 @@ function aed(n: number) { return "AED " + Math.round(n).toLocaleString("en-AE");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function serialize(p: any) {
   if (!p) return null;
-  const primary = p.media?.find((m: any) => m.isPrimary) ?? p.media?.[0];
+  const gallery = (p.media ?? []).filter((m: any) => !String(m.kind).startsWith("tryon"));
+  const primary = gallery.find((m: any) => m.isPrimary) ?? gallery[0];
   return {
     id: p.id, name: p.name, slug: p.slug, karat: p.karat, metalColor: p.metalColor,
     category: p.category?.name ?? null, price: p.basePrice, priceMode: p.priceMode,
     image: primary?.url ?? null,
   };
 }
+
+/* ───────────── Virtual Try-On (PRD: AI Studio · Phase 2) ─────────────
+ * The overlay try-on runs entirely on the customer's device (photos never leave it).
+ * This module adds an optional photorealistic render via the configured AI provider.
+ * It is self-contained and switchable: TRYON_AI=off disables it even when a key exists.
+ * Privacy: photos are processed in memory only — never written to disk, DB or logs.
+ */
+const tryOnAiEnabled = () => !!env.OPENAI_API_KEY && process.env.TRYON_AI !== "off";
+const TRYON_MODEL = process.env.TRYON_MODEL || "gpt-image-1";
+
+aiRouter.get("/try-on/config", (_req, res) => {
+  res.json({
+    aiRender: tryOnAiEnabled(),
+    disclaimer: "Virtual try-on is a visualization only. Size, fit, colour and sparkle may differ from the actual piece.",
+  });
+});
+
+// Simple per-IP rate limit to protect AI spend (in-memory; per instance).
+const hits = new Map<string, number[]>();
+function rateLimited(ip: string, max = 6, windowMs = 15 * 60_000) {
+  const now = Date.now();
+  const list = (hits.get(ip) ?? []).filter((t) => now - t < windowMs);
+  if (list.length >= max) { hits.set(ip, list); return true; }
+  list.push(now); hits.set(ip, list);
+  return false;
+}
+
+const PLACEMENT: Record<TryOnType, string> = {
+  necklace: "worn around the neck, resting naturally on the collarbones",
+  pendant: "worn as a pendant on a fine chain, resting just below the collarbones",
+  earrings: "worn on both earlobes as a matching pair",
+  ring: "worn on the ring finger",
+  bracelet: "worn around the wrist",
+};
+
+function dataUrlToBlob(dataUrl: string): Blob | null {
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl);
+  if (!m) return null;
+  return new Blob([new Uint8Array(Buffer.from(m[2], "base64"))], { type: m[1] });
+}
+
+aiRouter.post("/try-on/render", optionalAuth, async (req, res) => {
+  if (!tryOnAiEnabled()) return res.status(503).json({ error: "AI render is not enabled for this boutique." });
+  const body = z
+    .object({
+      productId: z.string().min(1),
+      photo: z.string().startsWith("data:image/").max(6_000_000),
+      consent: z.literal(true),
+    })
+    .safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "A photo and consent are required." });
+
+  const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() || req.ip || "anon";
+  if (rateLimited(ip)) return res.status(429).json({ error: "Please wait a few minutes before creating another render." });
+
+  const tId = await tenantId();
+  const product = await prisma.product.findFirst({
+    where: { id: body.data.productId, tenantId: tId, active: true },
+    include: { media: { orderBy: { sort: "asc" } }, category: true },
+  });
+  if (!product) return res.status(404).json({ error: "Product not found" });
+  const tryOn = resolveTryOn(product);
+  if (!tryOn) return res.status(400).json({ error: "Try-on isn't available for this piece." });
+
+  const photo = dataUrlToBlob(body.data.photo);
+  if (!photo) return res.status(400).json({ error: "Unsupported photo format." });
+
+  // Reference image of the jewellery: the staff cut-out if provided, else the primary photo.
+  const gallery = product.media.filter((m) => !m.kind.startsWith("tryon"));
+  const refUrl = tryOn.assetUrl ?? (gallery.find((m) => m.isPrimary) ?? gallery[0])?.url;
+  if (!refUrl) return res.status(400).json({ error: "This piece has no image to try on." });
+
+  try {
+    const refRes = await fetch(refUrl);
+    if (!refRes.ok) throw new Error("reference fetch failed");
+    const refType = refRes.headers.get("content-type")?.split(";")[0] || "image/jpeg";
+    const ref = new Blob([new Uint8Array(await refRes.arrayBuffer())], { type: refType.startsWith("image/") ? refType : "image/jpeg" });
+
+    const prompt = [
+      `Image 1 is a customer's photo. Image 2 shows a ${product.karat}K ${product.metalColor.toLowerCase()} ${product.metal.toLowerCase()} jewellery piece: "${product.name}"${product.stoneType ? ` with ${product.stoneType.toLowerCase()}` : ""}.`,
+      `Edit image 1 so the person is wearing exactly this piece, ${PLACEMENT[tryOn.type]}.`,
+      "Reproduce the design, metal colour and stones of image 2 faithfully at a realistic, proportionate size, with natural lighting, shadows and reflections.",
+      "Keep the person's face, identity, expression, skin, hair, clothing, pose and background unchanged. Do not add other jewellery, text or logos.",
+    ].join(" ");
+
+    const form = new FormData();
+    form.append("model", TRYON_MODEL);
+    form.append("prompt", prompt);
+    form.append("image[]", photo, "photo.jpg");
+    form.append("image[]", ref, "jewellery.jpg");
+    form.append("size", "1024x1536");
+    form.append("quality", "medium");
+    form.append("n", "1");
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 120_000);
+    const r = await fetch("https://api.openai.com/v1/images/edits", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` },
+      body: form,
+      signal: ctrl.signal,
+    }).finally(() => clearTimeout(timer));
+    const j = (await r.json().catch(() => ({}))) as { data?: { b64_json?: string }[]; error?: { message?: string } };
+    const b64 = j.data?.[0]?.b64_json;
+    if (!r.ok || !b64) {
+      console.warn("[try-on] provider error:", r.status, j.error?.message ?? "no image");
+      return res.status(502).json({ error: "The AI render couldn't be created right now. Please try again." });
+    }
+    res.json({ image: `data:image/png;base64,${b64}`, type: tryOn.type });
+  } catch (e) {
+    console.warn("[try-on] render failed:", (e as Error).message);
+    res.status(502).json({ error: "The AI render couldn't be created right now. Please try again." });
+  }
+});

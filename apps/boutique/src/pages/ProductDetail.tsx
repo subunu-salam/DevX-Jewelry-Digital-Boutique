@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowLeft, BadgeCheck, CalendarClock, Check, ChevronLeft, ChevronRight, Expand, Heart, Link2, Share2, ShieldCheck, X } from "lucide-react";
+import { ArrowLeft, BadgeCheck, CalendarClock, Check, ChevronLeft, ChevronRight, Expand, Heart, Link2, Share2, ShieldCheck, Sparkles, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { cn } from "@ui";
 import { api } from "@/lib/api";
@@ -269,6 +269,24 @@ function InfoPanel({ product }: { product: Product }) {
           {isSaved ? "In your collection" : "Add to collection"}
         </LuxuryButton>
       </motion.div>
+
+      {product.tryOn && (
+        <motion.div variants={item} className="mt-6">
+          <Link
+            to={`/try-on/${product.slug}`}
+            className="group relative flex items-center gap-3.5 overflow-hidden rounded-[20px] border border-brand/40 bg-surface p-3.5 pr-4 transition-colors duration-500 hover:border-brand"
+          >
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-night text-brand-soft">
+              <Sparkles className="size-5" strokeWidth={1.6} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-serif text-[20px] leading-tight">Try it on, virtually</span>
+              <span className="block text-[12px] text-muted-foreground">On your photo or live camera · a visualization</span>
+            </span>
+            <span className="text-[12px] font-semibold text-brand-deep transition-transform duration-500 group-hover:translate-x-1">Open →</span>
+          </Link>
+        </motion.div>
+      )}
 
       <motion.div variants={item} className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3">
         <button onClick={() => navigate("/appointments")} className="group inline-flex items-center gap-2 text-[14px] font-semibold">

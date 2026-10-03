@@ -26,6 +26,8 @@ export interface Product {
   isNew: boolean;
   tags: string[];
   availability: Availability[];
+  /** Virtual try-on support (null when not available for this piece). */
+  tryOn?: { type: "necklace" | "pendant" | "earrings" | "ring" | "bracelet"; assetUrl: string | null } | null;
   // full detail
   description?: string;
   stoneType?: string | null;

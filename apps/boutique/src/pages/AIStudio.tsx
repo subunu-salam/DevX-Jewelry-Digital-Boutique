@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
 import { motion } from "motion/react";
-import { Search, Camera, LineChart, ChevronRight } from "lucide-react";
+import { Search, Camera, LineChart, ChevronRight, Sparkles } from "lucide-react";
 
 const ITEMS = [
+  { to: "/try-on", icon: Sparkles, title: "Virtual Try-On", desc: "See a necklace, earrings, ring or bracelet on your own photo or live camera. A visualization, not an exact fit." },
   { to: "/ai/visual-search", icon: Search, title: "AI Visual Search", desc: "A customer uploads a photo — we find the closest pieces in live inventory." },
   { to: "/ai/catalog-studio", icon: Camera, title: "AI Catalog Studio", desc: "Photograph a new piece → AI drafts category, tags, description, SEO & a WhatsApp card, then publishes it to the CRM." },
   { to: "/ai/intelligence", icon: LineChart, title: "Jewelry Intelligence", desc: "Owner insights computed from real sales, stock and conversion data." },

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { isGalleryMedia, resolveTryOn } from "../lib/tryon.js";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { optionalAuth } from "../middleware/auth.js";
@@ -297,7 +298,8 @@ publicRouter.get("/quotes/shared/:token", async (req, res) => {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function serializeProduct(p: any, full = false) {
-  const primary = p.media.find((m: any) => m.isPrimary) ?? p.media[0];
+  const gallery = p.media.filter(isGalleryMedia);
+  const primary = gallery.find((m: any) => m.isPrimary) ?? gallery[0];
   const availability = p.inventory.map((inv: any) => ({
     branchId: inv.branchId,
     branchName: inv.branch?.name,
@@ -326,6 +328,7 @@ function serializeProduct(p: any, full = false) {
     tags: p.tags,
     stoneType: p.stoneType,
     availability,
+    tryOn: resolveTryOn(p),
   };
   if (!full) return base;
   return {
@@ -338,6 +341,6 @@ function serializeProduct(p: any, full = false) {
     certNumber: p.certNumber,
     certIssuer: p.certIssuer,
     warranty: p.warranty,
-    media: p.media.map((m: any) => ({ url: m.url, kind: m.kind })),
+    media: gallery.map((m: any) => ({ url: m.url, kind: m.kind })),
   };
 }

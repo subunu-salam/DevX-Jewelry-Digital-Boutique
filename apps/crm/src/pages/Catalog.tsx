@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Package, Star } from "lucide-react";
+import { Plus, Package, Star, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { aed } from "@/lib/format";
 import { Badge, Button, Card, Field, Input, Modal, PageHeader, Select } from "@/components/ui";
@@ -9,7 +9,9 @@ interface ProductRow {
   metal: string; karat: number; category: string | null; collection: string | null;
   image: string | null; featured: boolean; isNew: boolean; active: boolean; totalStock: number;
   inventory: { branchId: string; branchName: string; quantity: number }[];
+  tryOn?: TryOnSettings;
 }
+interface TryOnSettings { enabled: boolean; type: string; assetUrl: string | null; effectiveType: string | null; categoryType: string | null }
 interface Ref { id: string; name: string }
 
 export default function Catalog() {
@@ -19,6 +21,7 @@ export default function Catalog() {
   const [branches, setBranches] = useState<Ref[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [tryOnFor, setTryOnFor] = useState<ProductRow | null>(null);
 
   async function load() {
     setLoading(true);
@@ -51,11 +54,12 @@ export default function Catalog() {
                 <th className="px-4 py-3 font-medium">Price</th>
                 <th className="px-4 py-3 font-medium">Stock</th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Try-on</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {loading ? (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">Loading…</td></tr>
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">Loading…</td></tr>
               ) : rows.map((r) => (
                 <tr key={r.id} className="hover:bg-muted/40">
                   <td className="px-4 py-3">
@@ -83,15 +87,23 @@ export default function Catalog() {
                     {r.active ? <Badge tone="ACTIVE">Live</Badge> : <Badge>Archived</Badge>}
                     {r.isNew && <Badge tone="NEW"><span className="ml-1">New</span></Badge>}
                   </td>
+                  <td className="px-4 py-3">
+                    <button onClick={() => setTryOnFor(r)} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs hover:bg-muted">
+                      <Sparkles className={r.tryOn?.enabled ? "size-3.5 text-primary" : "size-3.5 text-muted-foreground"} />
+                      {r.tryOn?.enabled ? <span className="capitalize">{r.tryOn.effectiveType}{r.tryOn.assetUrl ? " · cut-out" : ""}</span> : <span className="text-muted-foreground">Off</span>}
+                    </button>
+                  </td>
                 </tr>
               ))}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">No products yet — create your first piece.</td></tr>
+                <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">No products yet — create your first piece.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </Card>
+
+      <TryOnModal product={tryOnFor} onClose={() => setTryOnFor(null)} onSaved={() => { setTryOnFor(null); load(); }} />
 
       <ProductModal
         open={open}
@@ -206,6 +218,83 @@ function ProductModal({ open, onClose, categories, collections, branches, onSave
       <div className="mt-6 flex justify-end gap-2">
         <Button variant="outline" onClick={onClose}>Cancel</Button>
         <Button onClick={save} disabled={busy}>{busy ? "Saving…" : "Create product"}</Button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ── Virtual try-on settings (PRD: Virtual Try-On · AR assets in product media) ── */
+const TRYON_TYPES = ["necklace", "pendant", "earrings", "ring", "bracelet"];
+
+function TryOnModal({ product, onClose, onSaved }: { product: ProductRow | null; onClose: () => void; onSaved: () => void }) {
+  const [enabled, setEnabled] = useState(true);
+  const [type, setType] = useState("auto");
+  const [assetUrl, setAssetUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!product) return;
+    const t = product.tryOn;
+    setEnabled(t ? t.enabled || t.type !== "auto" || !!t.assetUrl : true);
+    setType(t?.type ?? "auto");
+    setAssetUrl(t?.assetUrl ?? "");
+    setError(null);
+  }, [product]);
+
+  if (!product) return null;
+  const categoryType = product.tryOn?.categoryType ?? null;
+  const resolved = type === "auto" ? categoryType : type;
+
+  async function save() {
+    if (!product) return;
+    setError(null);
+    if (enabled && !resolved) { setError("Choose how this piece is worn — its category doesn't set it automatically."); return; }
+    if (assetUrl && !/^https:\/\//.test(assetUrl)) { setError("The cut-out must be an https:// image link."); return; }
+    setBusy(true);
+    try {
+      await api.put(`/api/crm/products/${product.id}`, { tryOn: { enabled, type, assetUrl: assetUrl || null } });
+      onSaved();
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal open={!!product} onClose={onClose} title={`Virtual try-on · ${product.name}`}>
+      <p className="text-sm text-muted-foreground">
+        Customers can see this piece on their own photo or live camera. It is always labelled as a visualization, and photos stay on the customer's device unless they request an AI render.
+      </p>
+
+      <label className="mt-4 flex items-center gap-2 text-sm font-medium">
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enable try-on for this piece
+      </label>
+
+      {enabled && (
+        <div className="mt-4 grid gap-4">
+          <Field label="How it's worn">
+            <Select value={type} onChange={setType}>
+              <option value="auto">Automatic from category{categoryType ? ` (${categoryType})` : " (not set)"}</option>
+              {TRYON_TYPES.map((t) => <option key={t} value={t} className="capitalize">{t}</option>)}
+            </Select>
+          </Field>
+          <Field label="Try-on cut-out (optional, transparent PNG)">
+            <Input value={assetUrl} onChange={setAssetUrl} placeholder="https://… (piece only, background removed)" />
+          </Field>
+          <div className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
+            <b className="text-foreground">For the most realistic result</b>, upload a front-facing photo of the piece alone with the background removed (PNG). Earrings: show the pair side by side.
+            Without a cut-out, the boutique automatically cuts out the product photo when it's shot on a plain background; lifestyle photos use the AI render instead (when enabled).
+          </div>
+          {assetUrl && /^https:\/\//.test(assetUrl) && (
+            <div className="flex justify-center rounded-lg p-4" style={{ backgroundImage: "repeating-conic-gradient(#e5e5e5 0% 25%, #fff 0% 50%)", backgroundSize: "16px 16px" }}>
+              <img src={assetUrl} alt="Cut-out preview" className="max-h-40 object-contain" />
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && <p className="mt-3 text-sm text-danger">{error}</p>}
+      <div className="mt-6 flex justify-end gap-2">
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
       </div>
     </Modal>
   );
