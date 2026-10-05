@@ -10,8 +10,8 @@ import { api } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { useStore } from "@/context/store";
 import { EASE, LuxuryButton, Modal, Price, t, useToast } from "@/design";
-import { LABEL, TIPS, defaults, detect, lerp, place, preload, type Placement, type TryOnType } from "@/lib/tryon/engine";
-import { prepareAsset, toJpeg, type Asset } from "@/lib/tryon/asset";
+import { LABEL, TIPS, defaults, detect, lerp, needs, place, preload, type FitSpec, type Placement, type TryOnType } from "@/lib/tryon/engine";
+import { assetFor, toJpeg, type Asset } from "@/lib/tryon/asset";
 
 const DISCLAIMER = "Virtual try-on is a visualization only. Size, fit, colour and sparkle may differ from the actual piece.";
 
@@ -23,7 +23,8 @@ const NO_ADJ: Adjust = { dx: 0, dy: 0, scale: 1, rot: 0, flip: false };
 
 export default function TryOn() {
   const { slug } = useParams();
-  return slug ? <Studio key={slug} slug={slug} /> : <Picker />;
+  // No key: switching pieces keeps the camera and photo running.
+  return slug ? <Studio slug={slug} /> : <Picker />;
 }
 
 /* ───────────────────────── Picker (/try-on) ───────────────────────── */
@@ -73,16 +74,21 @@ function Picker() {
 /* ───────────────────────── Studio (/try-on/:slug) ───────────────────────── */
 
 type Phase = "choose" | "photo" | "live" | "ai";
+const assetCache = new Map<string, Promise<Asset | null>>();
+const getAsset = (p: Product) => {
+  if (!assetCache.has(p.slug)) assetCache.set(p.slug, assetFor(p).catch(() => null));
+  return assetCache.get(p.slug)!;
+};
 
 function Studio({ slug }: { slug: string }) {
   const navigate = useNavigate();
   const toast = useToast();
   const { addToCart } = useStore();
 
-  const [product, setProduct] = useState<Product | null>(null);
-  const [similar, setSimilar] = useState<Product[]>([]);
-  const [aiEnabled, setAiEnabled] = useState(false);
+  const [catalog, setCatalog] = useState<Product[]>([]);
+  const [product, setProduct] = useState<Product | null | undefined>(undefined);
   const [asset, setAsset] = useState<Asset | null | "loading">("loading");
+  const [aiEnabled, setAiEnabled] = useState(false);
 
   const [phase, setPhase] = useState<Phase>(sessionPhoto ? "photo" : "choose");
   const [photo, setPhoto] = useState(sessionPhoto);
@@ -96,58 +102,81 @@ function Studio({ slug }: { slug: string }) {
   const [aiResult, setAiResult] = useState<string | null>(null);
 
   const type = product?.tryOn?.type ?? null;
+  const fit: FitSpec | null = asset && asset !== "loading" ? { ...asset.fit, aspect: asset.aspect } : null;
+  const typeRef = useRef(type); typeRef.current = type;
+  const fitRef = useRef(fit); fitRef.current = fit;
 
-  /* Load product, asset, AI availability, similar pieces */
+  /* Catalogue of try-on pieces + AI availability (once) */
+  useEffect(() => {
+    api.get<Product[]>("/api/public/products?limit=80").then((l) => setCatalog(l.filter((p) => p.tryOn))).catch(() => {});
+    api.get<{ aiRender: boolean }>("/api/ai/try-on/config").then((c) => setAiEnabled(!!c.aiRender)).catch(() => {});
+  }, []);
+
+  /* Current piece: show instantly from the catalogue, then load full detail + overlay */
   useEffect(() => {
     let alive = true;
+    const quick = catalog.find((p) => p.slug === slug);
+    if (quick) setProduct(quick);
+    setAsset("loading");
+    setAiResult(null);
     api.get<Product>(`/api/public/products/${slug}`).then(async (p) => {
       if (!alive) return;
       setProduct(p);
       if (!p.tryOn) { setAsset(null); return; }
       preload(p.tryOn.type);
-      const src = p.tryOn.assetUrl ?? p.image;
-      const a = src ? await prepareAsset(src, !!p.tryOn.assetUrl, p.tryOn.type === "earrings") : null;
+      const a = await getAsset(p);
       if (alive) setAsset(a);
-      api.get<Product[]>(`/api/public/products?limit=60`).then((list) => {
-        if (alive) setSimilar(list.filter((x) => x.tryOn?.type === p.tryOn!.type && x.slug !== p.slug && x.image).slice(0, 10));
-      }).catch(() => {});
     }).catch(() => { if (alive) { setProduct(null); setAsset(null); } });
-    api.get<{ aiRender: boolean }>("/api/ai/try-on/config").then((c) => alive && setAiEnabled(!!c.aiRender)).catch(() => {});
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
-  /* ── Photo → detect & place ── */
+  /* ── Photo: detect once, re-place whenever the piece changes ── */
   const imgRef = useRef<HTMLImageElement>(null);
-  const runImageDetection = useCallback(async () => {
-    const img = imgRef.current;
-    if (!img || !type) return;
+  const lmsRef = useRef<{ kind: "face" | "hand"; pts: { x: number; y: number }[] | null; W: number; H: number } | null>(null);
+
+  const detectPhoto = useCallback(async () => {
+    const img = imgRef.current, t = typeRef.current, f = fitRef.current;
+    if (!img || !t || !f || !img.naturalWidth) return;
     setStatus("detecting");
-    try {
-      const lms = await detect(type, img, "IMAGE");
-      if (lms) { setAuto({ items: place(type, lms, img.naturalWidth, img.naturalHeight), detected: true }); setStatus("placed"); return; }
-    } catch { /* model unavailable (offline) → manual placement */ }
-    setAuto({ items: defaults(type), detected: false });
-    setStatus("manual");
-  }, [type]);
+    const kind = needs(t);
+    let pts: { x: number; y: number }[] | null = null;
+    try { pts = await detect(t, img, "IMAGE"); } catch { /* model unavailable → manual placement */ }
+    lmsRef.current = { kind, pts, W: img.naturalWidth, H: img.naturalHeight };
+    if (pts) { setAuto({ items: place(t, pts, img.naturalWidth, img.naturalHeight, f), detected: true }); setStatus("placed"); }
+    else { setAuto({ items: defaults(t), detected: false }); setStatus("manual"); }
+  }, []);
 
-  useEffect(() => { if (phase === "photo" && photo) { setAdj(NO_ADJ); setAuto(null); } }, [phase, photo]);
+  useEffect(() => {
+    if (phase !== "photo" || !type || !fit) return;
+    const l = lmsRef.current;
+    if (l && l.kind === needs(type)) {
+      if (l.pts) { setAuto({ items: place(type, l.pts, l.W, l.H, fit), detected: true }); setStatus("placed"); }
+      else { setAuto({ items: defaults(type), detected: false }); setStatus("manual"); }
+    } else {
+      detectPhoto();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, type, asset]);
 
-  async function usePhoto(dataUrl: string, mirror = false) {
-    const j = await toJpeg(dataUrl, 1280, mirror);
+  async function usePhoto(dataUrl: string) {
+    const j = await toJpeg(dataUrl, 1280);
     sessionPhoto = j;
+    lmsRef.current = null;
+    setAuto(null);
+    setAdj(NO_ADJ);
     setPhoto(j);
     setAiResult(null);
     setPhase("photo");
   }
-
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
+    const file = e.target.files?.[0];
     e.target.value = "";
-    if (!f) return;
-    if (!f.type.startsWith("image/")) { toast({ title: "Please choose a photo" }); return; }
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast({ title: "Please choose a photo" }); return; }
     const r = new FileReader();
     r.onload = () => usePhoto(String(r.result));
-    r.readAsDataURL(f);
+    r.readAsDataURL(file);
   }
 
   /* ── Live camera ── */
@@ -155,7 +184,6 @@ function Studio({ slug }: { slug: string }) {
   const streamRef = useRef<MediaStream | null>(null);
   const [facing, setFacing] = useState<"user" | "environment">("user");
   const [videoAspect, setVideoAspect] = useState(3 / 4);
-  const smooth = useRef<Placement[] | null>(null);
   const liveSupported = typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
 
   const stopCamera = useCallback(() => { streamRef.current?.getTracks().forEach((tr) => tr.stop()); streamRef.current = null; }, []);
@@ -168,7 +196,7 @@ function Studio({ slug }: { slug: string }) {
       streamRef.current = s;
       setFacing(face);
       setAdj(NO_ADJ);
-      smooth.current = null;
+      setAuto(null);
       setPhase("live");
       requestAnimationFrame(() => {
         const v = videoRef.current;
@@ -177,35 +205,42 @@ function Studio({ slug }: { slug: string }) {
         v.onloadedmetadata = () => { setVideoAspect(v.videoWidth / v.videoHeight); v.play().catch(() => {}); };
       });
     } catch {
-      toast({ title: "Camera unavailable", body: "Allow camera access, or upload a photo instead." });
+      toast({ title: "Camera unavailable", body: "Allow camera access in your browser, or upload a photo instead." });
     }
   }
 
   useEffect(() => {
-    if (phase !== "live" || !type) return;
+    if (phase !== "live") return;
     let raf = 0, last = -1, stopped = false;
+    let smooth: Placement[] | null = null, smoothKey = "";
     setStatus("detecting");
     const loop = async () => {
       if (stopped) return;
-      const v = videoRef.current;
-      if (v && v.readyState >= 2 && v.currentTime !== last) {
+      const v = videoRef.current, t = typeRef.current, f = fitRef.current;
+      if (v && t && f && v.readyState >= 2 && v.currentTime !== last) {
         last = v.currentTime;
         try {
-          const lms = await detect(type, v, "VIDEO", performance.now());
-          if (lms) {
-            smooth.current = lerp(smooth.current, place(type, lms, v.videoWidth, v.videoHeight));
-            setAuto({ items: smooth.current, detected: true });
+          const pts = await detect(t, v, "VIDEO", performance.now());
+          if (pts && !stopped) {
+            const key = `${t}:${f.anchor}:${f.k}:${f.aspect}`;
+            const next = place(t, pts, v.videoWidth, v.videoHeight, f);
+            smooth = key === smoothKey ? lerp(smooth, next) : next;
+            smoothKey = key;
+            setAuto({ items: smooth, detected: true });
             setStatus("placed");
-          } else {
+          } else if (!stopped) {
             setStatus((s) => (s === "placed" ? "detecting" : s));
           }
-        } catch { setStatus("manual"); setAuto({ items: defaults(type), detected: false }); }
+        } catch {
+          setStatus("manual");
+          setAuto({ items: defaults(t), detected: false });
+        }
       }
       raf = requestAnimationFrame(loop);
     };
     loop();
     return () => { stopped = true; cancelAnimationFrame(raf); };
-  }, [phase, type]);
+  }, [phase]);
 
   function capture() {
     const v = videoRef.current;
@@ -219,12 +254,13 @@ function Studio({ slug }: { slug: string }) {
     usePhoto(c.toDataURL("image/jpeg", 0.92));
   }
 
-  /* ── Gestures (photo mode): drag to move, pinch to resize/rotate ── */
+  /* ── Gestures (photo): drag to move, pinch to resize/rotate ── */
   const stageRef = useRef<HTMLDivElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ dist: number; ang: number } | null>(null);
+  const editable = phase === "photo" && !!asset && asset !== "loading";
   function pd(e: React.PointerEvent) {
-    if (phase !== "photo" || !asset || asset === "loading") return;
+    if (!editable) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     pinch.current = null;
@@ -239,12 +275,12 @@ function Studio({ slug }: { slug: string }) {
       setAdj((a) => ({ ...a, dx: a.dx + (e.clientX - prev.x) / box.width, dy: a.dy + (e.clientY - prev.y) / box.height }));
     } else if (pts.length === 2) {
       const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      const ang = (Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) * 180) / Math.PI;
+      const angle = (Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) * 180) / Math.PI;
       if (pinch.current) {
-        const k = dist / pinch.current.dist, da = ang - pinch.current.ang;
+        const k = dist / pinch.current.dist, da = angle - pinch.current.ang;
         setAdj((a) => ({ ...a, scale: Math.min(3, Math.max(0.3, a.scale * k)), rot: a.rot + da }));
       }
-      pinch.current = { dist, ang };
+      pinch.current = { dist, ang: angle };
     }
   }
   function pu(e: React.PointerEvent) { pointers.current.delete(e.pointerId); pinch.current = null; }
@@ -260,16 +296,14 @@ function Studio({ slug }: { slug: string }) {
     c.width = W; c.height = H;
     const ctx = c.getContext("2d")!;
     ctx.drawImage(base, 0, 0);
-    const sources = asset.halves ?? [asset.src];
-    const imgs = await Promise.all(sources.map(load));
+    const imgs = await Promise.all((asset.halves ?? [asset.src]).map(load));
     auto.items.forEach((p, i) => {
       const img = imgs[Math.min(i, imgs.length - 1)];
       const w = p.w * adj.scale * W, h = w / asset.aspect;
       ctx.save();
       ctx.translate((p.cx + adj.dx) * W, (p.cy + adj.dy) * H);
       ctx.rotate(((p.rot + adj.rot) * Math.PI) / 180);
-      const mirror = (adj.flip ? -1 : 1) * (i === 1 && !asset.halves ? -1 : 1);
-      ctx.scale(mirror, 1);
+      ctx.scale((adj.flip ? -1 : 1) * (i === 1 && !asset.halves ? -1 : 1), 1);
       ctx.shadowColor = "rgba(0,0,0,.28)"; ctx.shadowBlur = w * 0.03; ctx.shadowOffsetY = w * 0.01;
       ctx.drawImage(img, -w / 2, -h / 2, w, h);
       ctx.restore();
@@ -277,7 +311,6 @@ function Studio({ slug }: { slug: string }) {
     watermark(ctx, W, H);
     try { return c.toDataURL("image/jpeg", 0.92); } catch { toast({ title: "Saving isn't available for this piece" }); return null; }
   }
-
   async function save(url?: string | null) {
     const data = url ?? (await compose());
     if (!data) return;
@@ -289,12 +322,9 @@ function Studio({ slug }: { slug: string }) {
     const data = url ?? (await compose());
     if (!data) return;
     const blob = await (await fetch(data)).blob();
-    const file = new File([blob], `aurelia-try-on.jpg`, { type: blob.type });
-    if (navigator.canShare?.({ files: [file] })) {
-      navigator.share({ files: [file], title: product?.name, text: `${product?.name}, a virtual try-on at Aurelia` }).catch(() => {});
-    } else {
-      save(data);
-    }
+    const file = new File([blob], "aurelia-try-on.jpg", { type: blob.type });
+    if (navigator.canShare?.({ files: [file] })) navigator.share({ files: [file], title: product?.name, text: `${product?.name}, a virtual try-on at Aurelia` }).catch(() => {});
+    else save(data);
   }
 
   /* ── AI render (opt-in, consent required) ── */
@@ -309,9 +339,7 @@ function Studio({ slug }: { slug: string }) {
     } catch (e) {
       toast({ title: "AI render unavailable", body: (e as Error).message });
       setPhase("photo");
-    } finally {
-      setAiBusy(false);
-    }
+    } finally { setAiBusy(false); }
   }
 
   function addInquiry() {
@@ -319,14 +347,13 @@ function Studio({ slug }: { slug: string }) {
     addToCart(product);
     toast({ title: "Added to your inquiry", body: product.name, image: product.image, action: { label: "View bag", to: "/cart" } });
   }
+  const pick = (p: Product) => { if (p.slug !== slug) navigate(`/try-on/${p.slug}`, { replace: true }); };
 
   /* ── Render ── */
-  if (product === null && asset !== "loading") {
+  if (product === null) {
     return <div className="px-4 py-24 text-center"><div className="font-serif text-[30px] italic">This piece isn't available</div><Link to="/try-on" className="mt-4 inline-block text-[13px] font-semibold underline underline-offset-4">Browse try-on pieces</Link></div>;
   }
-  if (!product || asset === "loading") {
-    return <div className="px-4 pt-6"><div className="skeleton h-6 w-40 rounded" /><div className="skeleton mt-4 aspect-[3/4] rounded-[22px]" /></div>;
-  }
+  if (!product) return <div className="px-4 pt-6"><div className="skeleton h-6 w-40 rounded" /><div className="skeleton mt-4 aspect-[3/4] rounded-[22px]" /></div>;
   if (!product.tryOn) {
     return (
       <div className="px-4 py-20 text-center">
@@ -337,19 +364,26 @@ function Studio({ slug }: { slug: string }) {
     );
   }
 
-  const overlayReady = !!asset;
-  const canAi = aiEnabled;
   const tType = product.tryOn.type;
+  const ready = !!asset && asset !== "loading";
+  const handFirst = tType === "ring" || tType === "bracelet";
+  const rail = <PieceRail items={catalog} current={product.slug} onPick={pick} />;
 
   return (
     <div className="px-4 pb-8 pt-3">
-      {/* Header */}
       <div className="flex items-center justify-between gap-3">
-        <button onClick={() => (phase === "choose" ? navigate(-1) : (stopCamera(), setPhase(photo ? (phase === "ai" ? "photo" : "choose") : "choose")))} className="inline-flex items-center gap-2 text-[13px] font-semibold text-muted-foreground"><ArrowLeft className="size-4" /> Back</button>
+        <button
+          onClick={() => {
+            if (phase === "choose") navigate(-1);
+            else if (phase === "ai") setPhase("photo");
+            else { stopCamera(); setPhase("choose"); }
+          }}
+          className="inline-flex items-center gap-2 text-[13px] font-semibold text-muted-foreground"
+        ><ArrowLeft className="size-4" /> Back</button>
         <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.28em] text-brand-deep"><Sparkles className="size-3.5" /> Virtual try-on</span>
       </div>
 
-      {/* Product strip */}
+      {/* Current piece */}
       <Link to={`/product/${product.slug}`} className="mt-4 flex items-center gap-3 rounded-2xl border border-border bg-surface p-2.5 pr-4">
         <img src={product.image ?? ""} alt="" className="size-12 rounded-xl object-cover" />
         <div className="min-w-0 flex-1">
@@ -360,45 +394,37 @@ function Studio({ slug }: { slug: string }) {
       </Link>
 
       <AnimatePresence mode="wait">
-        {/* ── 1. Choose a photo ── */}
+        {/* ── 1. Start ── */}
         {phase === "choose" && (
           <motion.section key="choose" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.45, ease: EASE }} className="mt-6">
-            <h1 className="font-serif text-[36px] leading-none">See it on <span className="italic text-brand-deep">you.</span></h1>
+            <h1 className="font-serif text-[38px] leading-none">See it on <span className="italic text-brand-deep">you.</span></h1>
             <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">{TIPS[tType]}</p>
 
-            {!overlayReady && !canAi ? (
-              <div className="mt-6 rounded-[22px] border border-border bg-surface p-5">
-                <div className="font-serif text-[22px] leading-tight">This piece is best seen in person</div>
-                <p className="mt-1.5 text-[13px] text-muted-foreground">Its photographs aren't suited to virtual try-on yet. An advisor can prepare it for your visit.</p>
-                <LuxuryButton full className="mt-4" onClick={() => navigate("/appointments")} icon={<CalendarClock className="size-4" />}>Book a private viewing</LuxuryButton>
-              </div>
-            ) : (
-              <div className="mt-6 grid gap-3">
-                {liveSupported && overlayReady && (
-                  <Option icon={<Video className="size-5" />} title="Live camera" desc="See the piece move with you in real time." onClick={() => startCamera(tType === "ring" || tType === "bracelet" ? "environment" : "user")} />
-                )}
+            <div className="mt-6 grid gap-3">
+              {liveSupported && (
+                <LuxuryButton variant="gold" size="lg" full onClick={() => startCamera(handFirst ? "environment" : "user")} icon={<Video className="size-4" />}>
+                  Start live try-on
+                </LuxuryButton>
+              )}
+              <div className="grid grid-cols-2 gap-3">
                 <label className="block cursor-pointer">
-                  <input type="file" accept="image/*" capture={tType === "ring" || tType === "bracelet" ? "environment" : "user"} className="sr-only" onChange={onFile} />
-                  <OptionBody icon={<Camera className="size-5" />} title="Take a photo" desc="Use your phone's camera." />
+                  <input type="file" accept="image/*" capture={handFirst ? "environment" : "user"} className="sr-only" onChange={onFile} />
+                  <OptionBody icon={<Camera className="size-5" />} title="Take a photo" desc="With your camera" />
                 </label>
                 <label className="block cursor-pointer">
                   <input type="file" accept="image/*" className="sr-only" onChange={onFile} />
-                  <OptionBody icon={<ImageUp className="size-5" />} title="Upload a photo" desc="Choose a clear, well-lit photo." />
+                  <OptionBody icon={<ImageUp className="size-5" />} title="Upload" desc="A clear, lit photo" />
                 </label>
               </div>
-            )}
+            </div>
 
-            {!overlayReady && canAi && (
-              <p className="mt-3 rounded-xl bg-sand px-3.5 py-2.5 text-[12.5px] text-foreground/80">
-                <Wand2 className="mr-1.5 inline size-3.5 text-brand-deep" />This piece is tried on with our AI render. Add your photo, then tap <b>Create AI render</b>.
-              </p>
-            )}
+            <div className="mt-7">{rail}</div>
             <PrivacyNote className="mt-5" />
             <Disclaimer className="mt-2" />
           </motion.section>
         )}
 
-        {/* ── 2. Photo / live stage ── */}
+        {/* ── 2. Live / photo stage ── */}
         {(phase === "photo" || phase === "live") && (
           <motion.section key="stage" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5, ease: EASE }} className="mt-4">
             <div
@@ -407,38 +433,49 @@ function Studio({ slug }: { slug: string }) {
               onPointerMove={pm}
               onPointerUp={pu}
               onPointerCancel={pu}
-              className="relative w-full touch-none select-none overflow-hidden rounded-[22px] bg-champagne"
+              className="relative w-full touch-none select-none overflow-hidden rounded-[22px] bg-night"
               style={{ aspectRatio: phase === "live" ? `${videoAspect}` : photo ? `${photo.w}/${photo.h}` : "3/4" }}
             >
               <div className="absolute inset-0" style={{ transform: phase === "live" && facing === "user" ? "scaleX(-1)" : undefined }}>
                 {phase === "live" ? (
                   <video ref={videoRef} playsInline muted className="absolute inset-0 size-full object-cover" />
                 ) : photo && (
-                  <img ref={imgRef} src={photo.url} alt="Your photo" draggable={false} onLoad={runImageDetection} className="absolute inset-0 size-full" />
+                  <img ref={imgRef} src={photo.url} alt="Your photo" draggable={false} onLoad={() => { lmsRef.current = null; detectPhoto(); }} className="absolute inset-0 size-full" />
                 )}
-                {overlayReady && auto && !compare && asset && auto.items.map((p, i) => (
-                  <img
-                    key={i}
-                    src={asset.halves?.[i] ?? asset.src}
-                    alt=""
-                    draggable={false}
-                    className="pointer-events-none absolute max-w-none"
-                    style={{
-                      left: `${(p.cx + adj.dx) * 100}%`,
-                      top: `${(p.cy + adj.dy) * 100}%`,
-                      width: `${p.w * adj.scale * 100}%`,
-                      aspectRatio: `${asset.aspect}`,
-                      transform: `translate(-50%, -50%) rotate(${p.rot + adj.rot}deg) scaleX(${(adj.flip ? -1 : 1) * (i === 1 && !asset.halves ? -1 : 1)})`,
-                      filter: "drop-shadow(0 2px 3px rgba(0,0,0,.28))",
-                      transition: phase === "live" ? "none" : "left .5s, top .5s, width .5s",
-                    }}
-                  />
-                ))}
+                <AnimatePresence>
+                  {ready && auto && !compare && asset && auto.items.map((p, i) => (
+                    <motion.img
+                      key={`${asset.src.slice(-24)}-${i}`}
+                      initial={{ opacity: 0, scale: 0.85 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.35, ease: EASE }}
+                      src={asset.halves?.[i] ?? asset.src}
+                      alt=""
+                      draggable={false}
+                      className="pointer-events-none absolute max-w-none"
+                      style={{
+                        left: `${(p.cx + adj.dx) * 100}%`,
+                        top: `${(p.cy + adj.dy) * 100}%`,
+                        width: `${p.w * adj.scale * 100}%`,
+                        aspectRatio: `${asset.aspect}`,
+                        x: "-50%", y: "-50%",
+                        rotate: p.rot + adj.rot,
+                        scaleX: (adj.flip ? -1 : 1) * (i === 1 && !asset.halves ? -1 : 1),
+                        filter: "drop-shadow(0 2px 3px rgba(0,0,0,.3))",
+                      }}
+                    />
+                  ))}
+                </AnimatePresence>
               </div>
 
-              {/* Labels */}
               <span className="absolute left-3 top-3 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white backdrop-blur">Visualization only</span>
-              <StatusChip status={status} overlayReady={overlayReady} live={phase === "live"} />
+              {asset === "loading" ? (
+                <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-surface/95 px-2.5 py-1 text-[10.5px] font-semibold"><Loader2 className="size-3 animate-spin text-brand-deep" /> Preparing piece…</span>
+              ) : <StatusChip status={status} overlayReady={ready} live={phase === "live"} />}
+              {ready && asset.source === "likeness" && (
+                <span className="absolute bottom-3 left-3 rounded-full bg-black/45 px-2.5 py-1 text-[10px] font-medium text-white/90 backdrop-blur" style={{ bottom: phase === "live" ? 96 : 12 }}>Rendered likeness</span>
+              )}
 
               {phase === "live" && (
                 <div className="absolute inset-x-0 bottom-4 flex items-center justify-center gap-6">
@@ -446,47 +483,54 @@ function Studio({ slug }: { slug: string }) {
                   <button onClick={capture} aria-label="Capture" className="flex size-[68px] items-center justify-center rounded-full border-4 border-white/90 bg-white/25 backdrop-blur transition active:scale-95">
                     <span className="size-[52px] rounded-full bg-white" />
                   </button>
-                  <RoundBtn label="Upload instead" onClick={() => { stopCamera(); setPhase("choose"); }}><ImageUp className="size-5" /></RoundBtn>
+                  <RoundBtn label="Upload a photo instead" onClick={() => { stopCamera(); setPhase("choose"); }}><ImageUp className="size-5" /></RoundBtn>
                 </div>
               )}
             </div>
 
+            {/* Switch pieces without leaving the camera */}
+            <div className="mt-4">{rail}</div>
+
             {/* Adjust */}
-            {phase === "photo" && overlayReady && (
+            {ready && (
               <div className="mt-4 rounded-[20px] border border-border bg-surface p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-[12.5px] font-semibold">Adjust the fit</span>
-                  <span className="text-[11px] text-muted-foreground">Drag · pinch to resize</span>
+                  <span className="text-[11px] text-muted-foreground">{phase === "photo" ? "Drag · pinch to resize" : "Follows you automatically"}</span>
                 </div>
-                <Slider label="Size" min={0.4} max={2.2} step={0.01} value={adj.scale} onChange={(v) => setAdj((a) => ({ ...a, scale: v }))} />
-                <Slider label="Angle" min={-45} max={45} step={1} value={adj.rot} onChange={(v) => setAdj((a) => ({ ...a, rot: v }))} />
+                <Slider label="Size" min={0.5} max={1.8} step={0.01} value={adj.scale} onChange={(v) => setAdj((a) => ({ ...a, scale: v }))} />
+                <Slider label="Angle" min={-30} max={30} step={1} value={adj.rot} onChange={(v) => setAdj((a) => ({ ...a, rot: v }))} />
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Chip onClick={() => setAdj((a) => ({ ...a, flip: !a.flip }))}><FlipHorizontal2 className="size-3.5" /> Flip</Chip>
                   <Chip onClick={() => setAdj(NO_ADJ)}><RotateCcw className="size-3.5" /> Reset</Chip>
                   <Chip onPointerDown={() => setCompare(true)} onPointerUp={() => setCompare(false)} onPointerLeave={() => setCompare(false)}>Hold to compare</Chip>
-                  <Chip onClick={() => setPhase("choose")}><RefreshCw className="size-3.5" /> New photo</Chip>
+                  {phase === "photo" && <Chip onClick={() => setAdj((a) => ({ ...a, flip: !a.flip }))}><FlipHorizontal2 className="size-3.5" /> Flip</Chip>}
+                  {phase === "photo" && liveSupported && <Chip onClick={() => startCamera(handFirst ? "environment" : "user")}><Video className="size-3.5" /> Go live</Chip>}
+                  {phase === "photo" && <Chip onClick={() => setPhase("choose")}><RefreshCw className="size-3.5" /> New photo</Chip>}
                 </div>
               </div>
             )}
 
-            {/* Actions */}
             {phase === "photo" && (
               <div className="mt-4 grid gap-2.5">
-                {canAi && (
-                  <LuxuryButton variant="gold" size="lg" full onClick={() => setConsentOpen(true)} icon={<Wand2 className="size-4" />}>
-                    Create realistic AI render
-                  </LuxuryButton>
+                {aiEnabled && (
+                  <LuxuryButton variant="gold" size="lg" full onClick={() => setConsentOpen(true)} icon={<Wand2 className="size-4" />}>Create realistic AI render</LuxuryButton>
                 )}
-                {overlayReady && (
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <LuxuryButton variant="outline" onClick={() => save()} icon={<Download className="size-4" />}>Save</LuxuryButton>
-                    <LuxuryButton variant="outline" onClick={() => share()} icon={<Share2 className="size-4" />}>Share</LuxuryButton>
-                  </div>
-                )}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <LuxuryButton variant="outline" onClick={() => save()} icon={<Download className="size-4" />}>Save</LuxuryButton>
+                  <LuxuryButton variant="outline" onClick={() => share()} icon={<Share2 className="size-4" />}>Share</LuxuryButton>
+                </div>
                 <Commerce onInquiry={addInquiry} onBook={() => navigate("/appointments")} />
               </div>
             )}
-            <Disclaimer className="mt-3" />
+            {phase === "live" && (
+              <div className="mt-4"><Commerce onInquiry={addInquiry} onBook={() => navigate("/appointments")} /></div>
+            )}
+            {ready && asset.source === "likeness" && (
+              <p className="mt-3 text-[11.5px] leading-relaxed text-muted-foreground">
+                Shown as a rendered likeness of {product.name}.{aiEnabled ? " For a photo-real preview, use the AI render." : " See the real piece at any of our boutiques."}
+              </p>
+            )}
+            <Disclaimer className="mt-2" />
           </motion.section>
         )}
 
@@ -523,25 +567,51 @@ function Studio({ slug }: { slug: string }) {
         )}
       </AnimatePresence>
 
-      {/* Similar pieces — switch without retaking the photo */}
-      {similar.length > 0 && phase !== "ai" && (
-        <section className="mt-8">
-          <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.28em] text-brand-deep">Try another {LABEL[tType]}</div>
-          <div className="no-scrollbar -mx-4 flex gap-3 overflow-x-auto px-4">
-            {similar.map((p) => (
-              <Link key={p.id} to={`/try-on/${p.slug}`} className="w-[92px] shrink-0">
-                <div className="aspect-square overflow-hidden rounded-2xl border border-border bg-champagne"><img src={p.image!} alt="" loading="lazy" className="size-full object-cover" /></div>
-                <div className="mt-1.5 line-clamp-2 text-[11.5px] leading-tight">{p.name}</div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Consent for AI render */}
       <Modal open={consentOpen} onClose={() => setConsentOpen(false)} title="Create an AI render">
         <ConsentBody onAccept={runAi} />
       </Modal>
+    </div>
+  );
+}
+
+/** Horizontal rail of try-on pieces with type filters; tapping swaps the piece instantly. */
+function PieceRail({ items, current, onPick }: { items: Product[]; current: string; onPick: (p: Product) => void }) {
+  const currentType = items.find((p) => p.slug === current)?.tryOn?.type;
+  const [filter, setFilter] = useState<TryOnType | "all">("all");
+  const types = useMemo(() => Array.from(new Set(items.map((p) => p.tryOn!.type))), [items]);
+  const shown = items.filter((p) => filter === "all" || p.tryOn!.type === filter);
+  const railRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = railRef.current?.querySelector<HTMLElement>(`[data-slug="${current}"]`);
+    el?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [current, filter]);
+  if (!items.length) return null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-brand-deep">Try another piece</span>
+      </div>
+      <div className="no-scrollbar -mx-4 mt-2.5 flex gap-1.5 overflow-x-auto px-4">
+        {(["all", ...types] as const).map((k) => (
+          <button key={k} onClick={() => setFilter(k)} className={cn("shrink-0 rounded-full border px-3 py-1.5 text-[11.5px] font-semibold capitalize transition-colors", filter === k ? "border-ink bg-ink text-on-ink" : "border-border bg-surface text-foreground/70", k === currentType && filter !== k && "border-brand/50")}>
+            {k === "all" ? "All" : k === "earrings" ? "Earrings" : `${LABEL[k]}s`}
+          </button>
+        ))}
+      </div>
+      <div ref={railRef} className="no-scrollbar -mx-4 mt-3 flex gap-3 overflow-x-auto px-4 pb-1">
+        {shown.map((p) => {
+          const on = p.slug === current;
+          return (
+            <button key={p.id} data-slug={p.slug} onClick={() => onPick(p)} className="w-[76px] shrink-0 text-left" aria-pressed={on}>
+              <span className={cn("block aspect-square overflow-hidden rounded-2xl border-2 bg-champagne transition-all duration-300", on ? "border-brand shadow-[0_8px_20px_-10px_rgba(169,131,76,.9)]" : "border-transparent")}>
+                {p.image && <img src={p.image} alt="" loading="lazy" className={cn("size-full object-cover transition-transform duration-500", on && "scale-105")} />}
+              </span>
+              <span className={cn("mt-1.5 line-clamp-2 block text-[11px] leading-tight", on ? "font-semibold text-foreground" : "text-muted-foreground")}>{p.name}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

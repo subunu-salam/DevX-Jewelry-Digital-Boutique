@@ -72,25 +72,35 @@ export function defaults(type: TryOnType): Placement[] {
   }
 }
 
+/** How an overlay sits on the body (see render.ts → Fit). */
+export interface FitSpec { anchor: "top" | "center"; k: number; drop?: number; aspect: number }
+
 /**
  * Convert normalised landmarks to placements. W/H are the media's pixel size so distances
- * are measured correctly on non-square frames.
+ * are measured correctly on non-square frames. `fit` describes the overlay's own geometry.
  */
-export function place(type: TryOnType, lms: Pt[], W: number, H: number): Placement[] {
+export function place(type: TryOnType, lms: Pt[], W: number, H: number, fit: FitSpec): Placement[] {
   const P = (i: number): Pt => ({ x: lms[i].x * W, y: lms[i].y * H });
   const out = (p: Pt, wPx: number, rot: number): Placement => ({ cx: p.x / W, cy: p.y / H, w: wPx / W, rot: deg(rot) });
+  /** Centre for a "top"-anchored overlay hanging along direction `dir`. */
+  const hang = (top: Pt, wPx: number, dir: Pt): Pt => {
+    const h = wPx / fit.aspect;
+    return { x: top.x + dir.x * h / 2, y: top.y + dir.y * h / 2 };
+  };
 
   if (type === "ring" || type === "bracelet") {
     const wrist = P(0), mcp9 = P(9), mcp5 = P(5), mcp17 = P(17), mcp13 = P(13), pip14 = P(14);
     if (type === "ring") {
-      const c = { x: mcp13.x + (pip14.x - mcp13.x) * 0.42, y: mcp13.y + (pip14.y - mcp13.y) * 0.42 };
-      return [out(c, d(mcp9, mcp13) * 1.15, ang(mcp13, pip14) + Math.PI / 2)];
+      const c = { x: mcp13.x + (pip14.x - mcp13.x) * 0.38, y: mcp13.y + (pip14.y - mcp13.y) * 0.38 };
+      return [out(c, d(mcp9, mcp13) * fit.k, ang(mcp13, pip14) + Math.PI / 2)];
     }
-    const c = { x: wrist.x + (mcp9.x - wrist.x) * 0.06, y: wrist.y + (mcp9.y - wrist.y) * 0.06 };
-    return [out(c, d(mcp5, mcp17) * 1.2, ang(wrist, mcp9) + Math.PI / 2)];
+    const len = d(wrist, mcp9);
+    const ux = (mcp9.x - wrist.x) / (len || 1), uy = (mcp9.y - wrist.y) / (len || 1);
+    const c = { x: wrist.x - ux * len * 0.12, y: wrist.y - uy * len * 0.12 }; // just below the wrist crease
+    return [out(c, d(mcp5, mcp17) * fit.k, ang(wrist, mcp9) + Math.PI / 2)];
   }
 
-  // Face: roll from the eye line, "down" perpendicular to it.
+  // Face-based: roll from the eye line; "down" is perpendicular to it.
   const eyeL = P(33), eyeR = P(263), chin = P(152), top = P(10), sideL = P(234), sideR = P(454);
   const roll = ang(eyeL, eyeR);
   const down = { x: -Math.sin(roll), y: Math.cos(roll) };
@@ -98,11 +108,17 @@ export function place(type: TryOnType, lms: Pt[], W: number, H: number): Placeme
   const faceW = d(sideL, sideR);
   const along = (p: Pt, k: number): Pt => ({ x: p.x + down.x * faceH * k, y: p.y + down.y * faceH * k });
 
-  if (type === "necklace") return [out(along(chin, 0.6), faceW * 1.3, roll)];
-  if (type === "pendant") return [out(along(chin, 0.72), faceW * 0.42, roll)];
-  // earrings: hang from just below each side of the face at ear level
-  const ew = faceW * 0.16;
-  return [out(along(sideL, 0.3), ew, roll), out(along(sideR, 0.3), ew, roll)];
+  if (type === "necklace" || (type === "pendant" && fit.anchor === "top")) {
+    const w = faceW * fit.k;
+    return [out(hang(along(chin, fit.drop ?? 0.42), w, down), w, roll)];
+  }
+  if (type === "pendant") return [out(along(chin, 0.95), faceW * 0.35 * fit.k, roll)];
+
+  // Earrings hang from each earlobe (just below the face outline at ear level).
+  const w = faceW * 0.16 * fit.k;
+  const lobe = (p: Pt) => along(p, 0.2);
+  const at = (p: Pt) => (fit.anchor === "top" ? hang(lobe(p), w, down) : lobe(p));
+  return [out(at(sideL), w, roll), out(at(sideR), w, roll)];
 }
 
 /** Smooth live-camera jitter. */

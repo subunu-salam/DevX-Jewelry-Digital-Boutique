@@ -5,11 +5,48 @@
  * Lifestyle photos (piece worn on a model) can't be cut out reliably → returns null,
  * and the studio offers the AI render or a boutique visit instead.
  */
+import type { TryOnType } from "./engine";
+import { renderLikeness, type Fit } from "./render";
+
 export interface Asset {
   src: string;           // image URL or data URL with transparency
   aspect: number;        // width / height
   halves?: [string, string]; // earrings shot as a pair → one per ear
   exportable: boolean;   // false when the source blocks canvas export (CORS)
+  fit: Fit;              // how it sits on the body
+  source: "staff" | "photo" | "likeness";
+}
+
+/** Fit for real cut-outs (staff PNGs / auto-cut product photos). */
+const PHOTO_FIT: Record<TryOnType, Fit> = {
+  necklace: { anchor: "top", k: 1.15, drop: 0.42 },
+  pendant: { anchor: "center", k: 1 },
+  earrings: { anchor: "top", k: 1.2 },
+  ring: { anchor: "center", k: 1.15 },
+  bracelet: { anchor: "center", k: 1.2 },
+};
+
+interface PieceLike {
+  name: string; metalColor: string; stoneType?: string | null; tags?: string[];
+  category?: { slug: string } | null; image: string | null;
+  tryOn?: { type: TryOnType; assetUrl: string | null } | null;
+}
+
+/** Best available overlay: staff cut-out → auto cut-out of a plain-background photo → rendered likeness. */
+export async function assetFor(p: PieceLike): Promise<Asset | null> {
+  const t = p.tryOn;
+  if (!t) return null;
+  const fit = PHOTO_FIT[t.type];
+  if (t.assetUrl) {
+    const a = await prepareAsset(t.assetUrl, true, t.type === "earrings");
+    if (a) return { ...a, fit, source: "staff" };
+  }
+  if (p.image) {
+    const a = await prepareAsset(p.image, false, t.type === "earrings");
+    if (a) return { ...a, fit, source: "photo" };
+  }
+  const r = renderLikeness(t.type, p);
+  return { src: r.src, aspect: r.aspect, exportable: true, fit: r.fit, source: "likeness" };
 }
 
 function load(url: string, cors: boolean): Promise<HTMLImageElement> {
@@ -99,7 +136,9 @@ function cutout(img: HTMLImageElement): { url: string; w: number; h: number } | 
   return { url: out.toDataURL("image/png"), w: cw, h: ch };
 }
 
-export async function prepareAsset(url: string, fromStaff: boolean, splitPair: boolean): Promise<Asset | null> {
+type Prepared = Omit<Asset, "fit" | "source">;
+
+export async function prepareAsset(url: string, fromStaff: boolean, splitPair: boolean): Promise<Prepared | null> {
   let img: HTMLImageElement;
   let cors = true;
   try { img = await load(url, true); } catch {
