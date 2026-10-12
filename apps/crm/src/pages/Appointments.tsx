@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { datetime } from "@/lib/format";
-import { Badge, Card, PageHeader, Select, EmptyState } from "@/components/ui";
+import { CalendarPlus } from "lucide-react";
+import { Button, Card, PageHeader, Select, EmptyState } from "@/components/ui";
+import ScheduleModal from "@/components/ScheduleModal";
+import { useToast } from "@/components/lux";
 
 interface Appt {
   id: string; reference: string; customerName: string; customerPhone: string | null;
@@ -10,8 +13,11 @@ interface Appt {
 const STATUSES = ["REQUESTED", "CONFIRMED", "COMPLETED", "CANCELLED", "NO_SHOW"];
 
 export default function Appointments() {
+  const toast = useToast();
   const [appts, setAppts] = useState<Appt[]>([]);
-  useEffect(() => { api.get<Appt[]>("/api/crm/sales/appointments").then(setAppts).catch(() => {}); }, []);
+  const [scheduling, setScheduling] = useState(false);
+  const load = () => api.get<Appt[]>("/api/crm/sales/appointments").then(setAppts).catch(() => {});
+  useEffect(() => { load(); }, []);
 
   async function setStatus(id: string, status: string) {
     setAppts((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
@@ -20,9 +26,14 @@ export default function Appointments() {
 
   return (
     <div>
-      <PageHeader title="Appointments" subtitle="Showroom visits booked from the boutique and CRM." />
+      <PageHeader
+        title="Appointments"
+        subtitle="Showroom visits booked from the boutique app and the CRM."
+        action={<Button onClick={() => setScheduling(true)}><CalendarPlus className="size-4" /> Schedule appointment</Button>}
+      />
+      <ScheduleModal open={scheduling} onClose={() => setScheduling(false)} onSaved={(ref) => { setScheduling(false); toast(`Appointment ${ref} booked`); load(); }} />
       <Card>
-        {appts.length === 0 ? <div className="p-6"><EmptyState message="No appointments scheduled." /></div> : (
+        {appts.length === 0 ? <div className="p-6"><EmptyState message="No appointments yet — use Schedule appointment to book one." /></div> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
