@@ -1,3 +1,4 @@
+import { JewelImage } from "@/design";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Trash2 } from "lucide-react";
@@ -84,7 +85,7 @@ export default function Cart() {
           {cart.map((l) => (
             <div key={l.productId} className="flex items-center gap-4 rounded-2xl border border-border bg-surface p-3">
               <div className="h-20 w-20 overflow-hidden rounded-xl bg-champagne">
-                {l.image && <img src={l.image} alt={l.name} className="h-full w-full object-cover" />}
+                <JewelImage src={l.image} piece={{ name: l.name }} alt={l.name} />
               </div>
               <div className="flex-1">
                 <div className="font-serif text-lg">{l.name}</div>

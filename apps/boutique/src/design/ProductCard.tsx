@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { Heart } from "lucide-react";
@@ -5,13 +6,30 @@ import { cn } from "@ui";
 import { useStore } from "@/context/store";
 import type { Product } from "@/lib/types";
 import { Badge } from "./Badge";
+import { JewelImage } from "./JewelImage";
 import { Price } from "./Price";
 import { rise } from "./motion";
 
-interface Props { product: Product; size?: "md" | "lg"; className?: string }
+interface Props { product: Product; size?: "md" | "lg"; className?: string; /** pointer-follow tilt + gold spotlight (catalogue) */ interactive?: boolean }
 
 /** Image-led card: large photograph, name, price. Everything else lives on the PDP. */
-export function ProductCard({ product, size = "md", className }: Props) {
+export function ProductCard({ product, size = "md", className, interactive }: Props) {
+  const tilt = useRef<HTMLDivElement>(null);
+  const onMove = (e: React.PointerEvent) => {
+    const el = tilt.current;
+    if (!interactive || !el || e.pointerType !== "mouse") return;
+    const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+    el.style.setProperty("--rx", `${(0.5 - py) * 7}deg`);
+    el.style.setProperty("--ry", `${(px - 0.5) * 9}deg`);
+    el.style.setProperty("--mx", `${px * 100}%`);
+    el.style.setProperty("--my", `${py * 100}%`);
+  };
+  const onLeave = () => {
+    const el = tilt.current;
+    if (!el) return;
+    el.style.setProperty("--rx", "0deg"); el.style.setProperty("--ry", "0deg");
+  };
   const { saved, toggleSaved } = useStore();
   const isSaved = saved.includes(product.id);
   const inStock = product.availability?.some((a) => a.quantity > 0);
@@ -19,18 +37,25 @@ export function ProductCard({ product, size = "md", className }: Props) {
   return (
     <motion.article variants={rise} className={cn("group relative", className)}>
       <Link to={`/product/${product.slug}`} className="block" aria-label={product.name}>
-        <div className={cn("relative overflow-hidden rounded-[18px] bg-champagne", size === "lg" ? "aspect-[3/4]" : "aspect-[4/5]")}>
-          {product.image ? (
-            <img
-              src={product.image}
-              alt={product.name}
-              loading="lazy"
-              decoding="async"
-              className="size-full object-cover transition-transform duration-[1400ms] ease-[var(--ease-lux)] group-hover:scale-[1.06]"
-            />
-          ) : (
-            <div className="flex size-full items-center justify-center font-serif text-lg italic text-muted-foreground">Aurelia</div>
+        <div
+          ref={tilt}
+          onPointerMove={onMove}
+          onPointerLeave={onLeave}
+          className={cn(
+            "relative overflow-hidden rounded-[18px] bg-champagne",
+            size === "lg" ? "aspect-[3/4]" : "aspect-[4/5]",
+            interactive && "lux-tilt",
           )}
+        >
+          {interactive && <span aria-hidden className="lux-spot pointer-events-none absolute inset-0 z-[1]" />}
+          <JewelImage
+            src={product.image}
+            piece={product}
+            alt={product.name}
+            loading="lazy"
+            decoding="async"
+            className="transition-[opacity,transform] duration-[1400ms] group-hover:scale-[1.06]"
+          />
           {/* soft vignette that deepens on hover */}
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 transition-opacity duration-700 group-hover:opacity-100" />
           <div className="absolute left-3 top-3 flex gap-1.5">

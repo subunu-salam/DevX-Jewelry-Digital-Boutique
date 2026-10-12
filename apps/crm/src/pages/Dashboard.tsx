@@ -9,6 +9,9 @@ import { api } from "@/lib/api";
 import { aed, datetime } from "@/lib/format";
 import { useAuth } from "@/context/auth";
 import { Badge } from "@/components/ui";
+import { useInsights } from "@/lib/insights";
+import { DemoBadge, InsightCard } from "@/components/lux";
+import { Sparkles } from "lucide-react";
 
 interface DashboardData {
   kpis: {
@@ -35,6 +38,8 @@ interface DashboardData {
 /* Palette: graphite + gold (matches index.css tokens) */
 const GOLD = "#d4af6a";
 const GOLD_SHADES = ["#d4af6a", "#f0d9a8", "#a8854a", "#e6c88f", "#7d6236", "#c9b48a"];
+/** Categorical (lead sources): validated for colour-blind separation on the dark surface. */
+const CAT = ["#b7810f", "#2a75ba", "#d66f71", "#357426"];
 const INK = "#e9eaee";
 const MUTED = "#8b93a3";
 const GRID = "#262932";
@@ -103,6 +108,8 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <AiReadout style={next()} />
+
       {/* ── Hero: revenue + KPI tiles ── */}
       <div className="grid gap-5 xl:grid-cols-[1.55fr_1fr]">
         <section className="lux-card lux-sheen rise p-6" style={next()}>
@@ -119,12 +126,9 @@ export default function Dashboard() {
                 <span className="text-muted-foreground">vs last month · {aed(k.revenue)} lifetime issued</span>
               </div>
             </div>
-            <div className="flex gap-4 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-primary" /> Revenue</span>
-              <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3 rounded bg-[#e9eaee]/60" /> Leads</span>
-            </div>
+            <span className="text-xs text-muted-foreground">Revenue · last 6 months (AED)</span>
           </div>
-          <div className="mt-5 h-60">
+          <div className="mt-5 h-52">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={trend} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
                 <defs>
@@ -135,12 +139,22 @@ export default function Dashboard() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 6" vertical={false} stroke={GRID} />
                 <XAxis dataKey="month" tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} />
-                <YAxis yAxisId="r" tick={{ fontSize: 11, fill: MUTED }} axisLine={false} tickLine={false} width={52} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`)} />
-                <YAxis yAxisId="l" orientation="right" hide />
-                <Tooltip contentStyle={tooltipStyle} cursor={{ stroke: GOLD, strokeOpacity: 0.25 }} formatter={(v: number, n: string) => (n === "revenue" ? [aed(v), "Revenue"] : [v, "Leads"])} />
-                <Area yAxisId="r" type="monotone" dataKey="revenue" stroke={GOLD} strokeWidth={2.5} fill="url(#revFill)" animationDuration={1400} dot={{ r: 3, fill: GOLD, strokeWidth: 0 }} activeDot={{ r: 5 }} />
-                <Line yAxisId="l" type="monotone" dataKey="leads" stroke={INK} strokeOpacity={0.55} strokeWidth={1.6} strokeDasharray="4 4" dot={false} animationDuration={1600} />
+                <YAxis tick={{ fontSize: 11, fill: MUTED }} axisLine={false} tickLine={false} width={52} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`)} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ stroke: GOLD, strokeOpacity: 0.25 }} formatter={(v: number) => [aed(v), "Revenue"]} />
+                <Area type="monotone" dataKey="revenue" stroke={GOLD} strokeWidth={2.5} fill="url(#revFill)" animationDuration={1400} dot={{ r: 3, fill: GOLD, strokeWidth: 0 }} activeDot={{ r: 5 }} />
               </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          {/* Leads: their own small chart (one measure per axis) */}
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground"><span>New leads per month</span><span className="tabular-nums">{trend.reduce((t, m) => t + m.leads, 0)} in 6 months</span></div>
+          <div className="mt-1 h-16">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={trend} margin={{ top: 4, right: 6, left: 0, bottom: 0 }}>
+                <XAxis dataKey="month" hide />
+                <YAxis hide allowDecimals={false} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "rgba(212,175,106,.06)" }} formatter={(v: number) => [v, "Leads"]} />
+                <Bar dataKey="leads" fill="#8b93a3" fillOpacity={0.55} radius={[4, 4, 0, 0]} maxBarSize={28} animationDuration={1300} />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </section>
@@ -335,7 +349,7 @@ function Sources({ sources }: { sources: { source: string; count: number }[] }) 
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie data={sources} dataKey="count" nameKey="source" innerRadius="64%" outerRadius="100%" paddingAngle={3} stroke="none" animationDuration={1300}>
-              {sources.map((_, i) => <Cell key={i} fill={GOLD_SHADES[i % GOLD_SHADES.length]} />)}
+              {sources.map((_, i) => <Cell key={i} fill={CAT[i % CAT.length]} />)}
             </Pie>
             <Tooltip contentStyle={tooltipStyle} formatter={(v: number, n: string) => [v, SOURCE_LABEL[n] ?? n]} />
           </PieChart>
@@ -348,7 +362,7 @@ function Sources({ sources }: { sources: { source: string; count: number }[] }) 
       <ul className="min-w-0 flex-1 space-y-2">
         {sources.map((s, i) => (
           <li key={s.source} className="flex items-center gap-2 text-xs">
-            <span className="size-2.5 shrink-0 rounded-sm" style={{ background: GOLD_SHADES[i % GOLD_SHADES.length] }} />
+            <span className="size-2.5 shrink-0 rounded-sm" style={{ background: CAT[i % CAT.length] }} />
             <span className="flex-1 truncate">{SOURCE_LABEL[s.source] ?? s.source}</span>
             <span className="tabular-nums text-muted-foreground">{Math.round((s.count / total) * 100)}%</span>
           </li>
@@ -463,3 +477,28 @@ function DashboardSkeleton() {
   );
 }
 
+
+/** AI read-out: headline + the top two recommendations (live or labelled demo model). */
+function AiReadout({ style }: { style: React.CSSProperties }) {
+  const { data } = useInsights("auto");
+  if (!data) return <div className="skeleton mb-5 h-[124px] rounded-2xl" />;
+  return (
+    <section className="lux-card lux-sheen rise relative mb-5 overflow-hidden p-5" style={style}>
+      <div aria-hidden className="pointer-events-none absolute -left-16 -top-24 size-64 rounded-full bg-primary/12 blur-3xl" />
+      <div className="relative grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+        <div className="flex items-start gap-3.5">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary shadow-[0_0_28px_-8px_rgba(212,175,106,.7)]"><Sparkles className="size-5" /></span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/80">AI read-out</span>
+              <DemoBadge source={data.source} note={data.note ?? undefined} />
+            </div>
+            <p className="mt-1.5 text-[16px] font-medium leading-snug tracking-tight">{data.headline}</p>
+            <Link to="/insights" className="group mt-2 inline-flex items-center gap-1 text-xs text-primary">Open AI insights <ArrowRight className="size-3 transition-transform duration-300 group-hover:translate-x-0.5" /></Link>
+          </div>
+        </div>
+        <div className="space-y-2">{data.recommendations.slice(0, 2).map((r, i) => <InsightCard key={r.id} rec={r} delay={250 + i * 80} />)}</div>
+      </div>
+    </section>
+  );
+}

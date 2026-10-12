@@ -9,7 +9,7 @@ import { cn } from "@ui";
 import { api } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { useStore } from "@/context/store";
-import { EASE, LuxuryButton, Modal, Price, t, useToast } from "@/design";
+import { EASE, JewelImage, LuxuryButton, Modal, Price, t, useToast } from "@/design";
 import { LABEL, TIPS, defaults, detect, lerp, needs, place, preload, type FitSpec, type Placement, type TryOnType } from "@/lib/tryon/engine";
 import { assetFor, toJpeg, type Asset } from "@/lib/tryon/asset";
 
@@ -57,7 +57,7 @@ function Picker() {
           <motion.div key={p.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={t(0.6, i * 0.04)}>
             <Link to={`/try-on/${p.slug}`} className="group block">
               <div className="relative aspect-[4/5] overflow-hidden rounded-[18px] bg-champagne">
-                <img src={p.image!} alt={p.name} loading="lazy" className="size-full object-cover transition-transform duration-[1200ms] ease-[var(--ease-lux)] group-hover:scale-105" />
+                <JewelImage src={p.image} piece={p} alt={p.name} loading="lazy" className="transition-transform duration-[1200ms] ease-[var(--ease-lux)] group-hover:scale-105" />
                 <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-surface/95 px-2.5 py-1 text-[10.5px] font-semibold text-brand-deep"><Sparkles className="size-3" /> Try on</span>
               </div>
               <div className="mt-2.5 font-serif text-[17px] leading-tight">{p.name}</div>
@@ -393,7 +393,7 @@ function Studio({ slug }: { slug: string }) {
 
       {/* Current piece */}
       <Link to={`/product/${product.slug}`} className="mt-4 flex items-center gap-3 rounded-2xl border border-border bg-surface p-2.5 pr-4">
-        <img src={product.image ?? ""} alt="" className="size-12 rounded-xl object-cover" />
+        <span className="size-12 shrink-0 overflow-hidden rounded-xl"><JewelImage src={product.image} piece={product} alt="" /></span>
         <div className="min-w-0 flex-1">
           <div className="truncate font-serif text-[18px] leading-tight">{product.name}</div>
           <div className="text-[11.5px] text-muted-foreground">{product.karat}K {product.metalColor} · {LABEL[tType]}</div>
@@ -613,7 +613,7 @@ function PieceRail({ items, current, onPick }: { items: Product[]; current: stri
           return (
             <button key={p.id} data-slug={p.slug} onClick={() => onPick(p)} className="w-[76px] shrink-0 text-left" aria-pressed={on}>
               <span className={cn("block aspect-square overflow-hidden rounded-2xl border-2 bg-champagne transition-all duration-300", on ? "border-brand shadow-[0_8px_20px_-10px_rgba(169,131,76,.9)]" : "border-transparent")}>
-                {p.image && <img src={p.image} alt="" loading="lazy" className={cn("size-full object-cover transition-transform duration-500", on && "scale-105")} />}
+                <JewelImage src={p.image} piece={p} alt="" loading="lazy" className={cn("transition-transform duration-500", on && "scale-105")} />
               </span>
               <span className={cn("mt-1.5 line-clamp-2 block text-[11px] leading-tight", on ? "font-semibold text-foreground" : "text-muted-foreground")}>{p.name}</span>
             </button>

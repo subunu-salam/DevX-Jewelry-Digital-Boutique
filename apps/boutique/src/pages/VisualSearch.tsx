@@ -1,3 +1,4 @@
+import { JewelImage } from "@/design";
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Camera, Loader2, Plus } from "lucide-react";
@@ -77,7 +78,7 @@ export default function VisualSearch() {
               {matches.map((m) => (
                 <div key={m.product.id} className="flex gap-3 rounded-2xl border border-border bg-surface p-2.5">
                   <div className="size-[74px] flex-none overflow-hidden rounded-xl bg-champagne">
-                    {m.product.image && <img src={m.product.image} alt="" className="size-full object-cover" />}
+                    <JewelImage src={m.product.image} piece={{ name: m.product.name, metalColor: m.product.metalColor }} alt="" />
                   </div>
                   <div className="flex-1">
                     <div className="font-serif text-[17px] leading-tight">{m.product.name}</div>

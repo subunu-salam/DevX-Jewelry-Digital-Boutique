@@ -156,3 +156,19 @@
 .logo-for-dark { display: none; }
 [data-theme="dark"] .logo-for-light { display: none; }
 [data-theme="dark"] .logo-for-dark { display: inline-block; }
+
+/* ── Catalogue interactions: pointer tilt + gold spotlight (mouse only) ── */
+.lux-tilt {
+  transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform .6s var(--ease-lux), box-shadow .6s var(--ease-lux);
+  will-change: transform;
+}
+.lux-tilt:hover { box-shadow: 0 26px 50px -30px rgba(74, 44, 30, .55); }
+.lux-spot {
+  opacity: 0;
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 30%), rgba(255, 236, 200, .32), transparent 60%);
+  mix-blend-mode: soft-light;
+  transition: opacity .5s var(--ease-lux);
+}
+.lux-tilt:hover .lux-spot { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .lux-tilt { transform: none !important; } }
