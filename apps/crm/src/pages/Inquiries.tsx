@@ -207,6 +207,7 @@ export default function Inquiries() {
           onClose={() => setQuoteFor(null)}
           inquiryId={quoteFor.id}
           seedItems={quoteFor.items.map((it) => it.productName)}
+          customerName={quoteFor.customerName}
           onSaved={() => { setQuoteFor(null); toast("Quotation created — lead moved to Quoted"); load(); }}
         />
       )}

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, FileText, MessageCircle, Plus, Receipt, Search, Send, X } from "lucide-react";
+import { Check, Copy, Eye, FileText, MessageCircle, Plus, Receipt, Search, Send, X } from "lucide-react";
 import { cn } from "@ui";
 import { api, API_URL } from "@/lib/api";
 import { aed, date } from "@/lib/format";
 import { Badge } from "@/components/ui";
 import { Count, Drawer, Empty, aedShort, initials, useToast } from "@/components/lux";
 import QuoteModal from "@/components/QuoteModal";
+import DocPreview, { quoteToDoc } from "@/components/DocPreview";
 
 interface Quote {
   id: string; reference: string; status: string; customerName: string; branchName: string | null;
@@ -41,6 +42,7 @@ export default function Quotes() {
   const [creating, setCreating] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [detail, setDetail] = useState<QuoteDetail | null>(null);
+  const [previewing, setPreviewing] = useState(false);
 
   async function load() { setQuotes(await api.get<Quote[]>("/api/crm/sales/quotes")); }
   useEffect(() => { load().catch(() => setQuotes([])); }, []);
@@ -205,6 +207,7 @@ export default function Quotes() {
             <div>
               <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Share with the customer</div>
               <div className="flex gap-2">
+                <button onClick={() => setPreviewing(true)} className="btn-line flex-1"><Eye className="size-4" /> Preview</button>
                 <button onClick={() => copy(detail.shareToken)} className="btn-line flex-1"><Copy className="size-4" /> Copy link</button>
                 <a href={waShare({ reference: detail.reference, customerName: detail.customer?.name, total: detail.total, shareToken: detail.shareToken, customerPhone: detail.customer?.phone })} target="_blank" rel="noopener noreferrer" className="btn-line flex-1 hover:!border-success/50 hover:!text-success"><MessageCircle className="size-4" /> WhatsApp</a>
                 <a href={shareUrl(detail.shareToken)} target="_blank" rel="noopener noreferrer" className="btn-line"><FileText className="size-4" /> View</a>
@@ -214,6 +217,7 @@ export default function Quotes() {
           </div>
         )}
       </Drawer>
+      <DocPreview d={previewing && detail ? quoteToDoc(detail) : null} onClose={() => setPreviewing(false)} />
 
       {creating && <QuoteModal open onClose={() => setCreating(false)} onSaved={() => { setCreating(false); toast("Quotation created"); load(); }} />}
     </div>
