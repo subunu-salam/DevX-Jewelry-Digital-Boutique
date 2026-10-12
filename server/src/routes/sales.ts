@@ -49,6 +49,51 @@ salesRouter.get("/inquiries", async (req, res) => {
   );
 });
 
+/* Staff-created lead (walk-in, phone call, WhatsApp, Instagram…) */
+salesRouter.post("/inquiries", async (req, res) => {
+  const p = req.principal!;
+  const body = z
+    .object({
+      name: z.string().trim().min(2),
+      phone: z.string().trim().min(6),
+      email: z.string().email().optional().or(z.literal("")),
+      source: z.enum(["walk_in", "phone", "whatsapp", "instagram", "referral", "boutique"]).default("walk_in"),
+      status: z.enum(["NEW", "QUALIFIED", "QUOTED", "APPOINTMENT"]).default("NEW"),
+      branchId: z.string().optional().or(z.literal("")),
+      assignedToId: z.string().optional().or(z.literal("")),
+      budget: z.number().nonnegative().optional(),
+      occasion: z.string().optional(),
+      notes: z.string().optional(),
+      items: z.array(z.object({ productId: z.string().optional(), productName: z.string().min(1), quantity: z.number().int().positive().default(1) })).default([]),
+    })
+    .safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "Please fill in the customer's name and phone number.", detail: body.error.flatten() });
+  const d = body.data;
+
+  const existing = await prisma.customer.findFirst({ where: { tenantId: p.tenantId, phone: d.phone } });
+  const customer = existing
+    ? existing
+    : await prisma.customer.create({ data: { tenantId: p.tenantId, name: d.name, phone: d.phone, email: d.email || null } });
+
+  const inquiry = await prisma.inquiry.create({
+    data: {
+      tenantId: p.tenantId,
+      reference: makeRef("INQ"),
+      customerId: customer.id,
+      branchId: d.branchId || null,
+      assignedToId: d.assignedToId || p.sub,
+      status: d.status,
+      source: d.source,
+      budget: d.budget,
+      occasion: d.occasion || null,
+      notes: d.notes || null,
+      items: { create: d.items.map((it) => ({ productId: it.productId, productName: it.productName, quantity: it.quantity })) },
+    },
+  });
+  await audit({ tenantId: p.tenantId, userId: p.sub, action: "inquiry.create", entity: "Inquiry", entityId: inquiry.id });
+  res.status(201).json({ id: inquiry.id, reference: inquiry.reference });
+});
+
 salesRouter.patch("/inquiries/:id", async (req, res) => {
   const p = req.principal!;
   const body = z

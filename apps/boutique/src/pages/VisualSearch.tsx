@@ -5,6 +5,7 @@ import { Camera, Loader2, Plus } from "lucide-react";
 import { api } from "@/lib/api";
 import { fileToDataUrl } from "@/lib/owner";
 import { aed } from "@/lib/format";
+import { readImageHints } from "@/lib/imageHints";
 import { useStore } from "@/context/store";
 import SubHeader from "@/components/SubHeader";
 
@@ -29,7 +30,8 @@ export default function VisualSearch() {
     setPreview(dataUrl);
     setLoading(true);
     try {
-      const res = await api.post<{ ai: boolean; note?: string; matches: Match[] }>("/api/ai/visual-search", { imageBase64: dataUrl });
+      const hints = await readImageHints(dataUrl).catch(() => undefined);
+      const res = await api.post<{ ai: boolean; note?: string; matches: Match[] }>("/api/ai/visual-search", { imageBase64: dataUrl, hints });
       setMatches(res.matches);
       if (!res.ai && res.note) setNote(res.note);
     } catch (e) {
