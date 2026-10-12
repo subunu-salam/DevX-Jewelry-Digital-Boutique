@@ -37,7 +37,10 @@ async function openaiVision(prompt: string, imageDataUrl?: string): Promise<unkn
 
 /* ───────────── Visual Search (customer) ───────────── */
 aiRouter.post("/visual-search", optionalAuth, async (req, res) => {
-  const body = z.object({ imageBase64: z.string().optional(), category: z.string().optional() }).safeParse(req.body);
+  const body = z.object({
+    imageBase64: z.string().optional(), category: z.string().optional(),
+    hints: z.object({ metal: z.string().nullish(), accents: z.array(z.string()).max(8).optional(), shape: z.string().nullish() }).optional(),
+  }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: "Invalid payload" });
   const tId = await tenantId();
   const products = await prisma.product.findMany({
@@ -60,16 +63,55 @@ aiRouter.post("/visual-search", optionalAuth, async (req, res) => {
     }
   }
 
-  // Fallback: filter by category if provided, else feature new/featured pieces.
-  let pool = products;
-  if (body.data.category) pool = products.filter((p) => p.category?.name === body.data.category);
-  const picks = (pool.length ? pool : products).filter((p) => p.isNew || p.featured).slice(0, 5);
+  // Fallback (no API key): rank inventory against what the browser read from the photo —
+  // shape → category, metal tone, and accent colours → stones / motifs.
+  const h = body.data.hints;
+  const ranked = products
+    .map((p) => ({ p, ...scoreAgainstHints(p, h, body.data.category) }))
+    .sort((a, b) => b.score - a.score || Number(b.p.featured) - Number(a.p.featured));
+  const top = ranked.slice(0, 5);
   res.json({
     ai: false,
-    note: "Add an OPENAI_API_KEY on the server to enable true image similarity. Showing curated matches.",
-    matches: (picks.length ? picks : pool.slice(0, 5)).map((p) => ({ product: serialize(p), reason: "Popular in this style" })),
+    note: h?.shape || h?.metal ? undefined : "We couldn't read this photo clearly — showing pieces you may like.",
+    matches: top.map(({ p, reason }) => ({ product: serialize(p), reason })),
   });
 });
+
+const SHAPE_CATS: Record<string, string[]> = {
+  pendant: ["pendant", "necklace"], necklace: ["necklace", "pendant"], ring: ["ring"],
+  earrings: ["earring"], bangle: ["bangle", "bracelet"],
+};
+const ACCENT_WORDS: Record<string, string[]> = {
+  blue: ["sapphire", "enamel", "evil-eye", "evil eye", "blue", "topaz", "tanzanite"],
+  black: ["evil-eye", "evil eye", "onyx", "enamel", "black"],
+  green: ["emerald", "green", "peridot", "jade"],
+  red: ["ruby", "red", "garnet"],
+  pink: ["pink", "tourmaline", "morganite", "rose"],
+  "white-sparkle": ["diamond", "solitaire", "pearl", "zircon"],
+};
+type Hints = { metal?: string | null; accents?: string[]; shape?: string | null } | undefined;
+function scoreAgainstHints(
+  p: { name: string; metalColor: string; stoneType: string | null; tags: string[]; category: { name: string } | null; featured: boolean },
+  h: Hints, category?: string,
+) {
+  const cat = (p.category?.name ?? "").toLowerCase();
+  const text = [p.name, p.stoneType ?? "", ...p.tags].join(" ").toLowerCase();
+  let score = 0; const why: string[] = [];
+  if (category && p.category?.name === category) { score += 6; why.push(p.category.name); }
+  if (h?.shape) {
+    const cats = SHAPE_CATS[h.shape] ?? [];
+    const i = cats.findIndex((c) => cat.includes(c));
+    if (i === 0) { score += 6; why.push(`${h.shape} shape`); } else if (i > 0) score += 3;
+  }
+  if (h?.metal && p.metalColor === h.metal) { score += 3; why.push(`${h.metal.toLowerCase()} gold`); }
+  for (const a of h?.accents ?? []) {
+    const hit = (ACCENT_WORDS[a] ?? []).find((w) => text.includes(w));
+    if (hit) { score += 4; why.push(hit.replace("-", " ")); break; }
+  }
+  if (p.featured) score += 0.5;
+  const reason = why.length ? "Matches " + [...new Set(why)].slice(0, 3).join(", ") : "Similar style";
+  return { score, reason };
+}
 
 /* ───────────── AI Catalog Studio (staff) ───────────── */
 aiRouter.post("/catalog/analyze", requireStaff, async (req, res) => {
