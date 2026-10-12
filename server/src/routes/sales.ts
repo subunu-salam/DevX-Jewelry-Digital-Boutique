@@ -137,6 +137,56 @@ salesRouter.get("/appointments", async (req, res) => {
   );
 });
 
+/* Staff-scheduled appointment (from the Appointments page or a lead) */
+salesRouter.post("/appointments", async (req, res) => {
+  const p = req.principal!;
+  const body = z
+    .object({
+      customerId: z.string().optional(),
+      name: z.string().trim().optional(),
+      phone: z.string().trim().optional(),
+      inquiryId: z.string().optional(),
+      branchId: z.string().min(1),
+      staffId: z.string().optional().or(z.literal("")),
+      reason: z.string().trim().min(2).default("Showroom visit"),
+      scheduledAt: z.string().refine((s) => !Number.isNaN(Date.parse(s)), "Invalid date"),
+      status: z.enum(["REQUESTED", "CONFIRMED"]).default("CONFIRMED"),
+      notes: z.string().optional(),
+    })
+    .safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "Please pick a boutique, date and time.", detail: body.error.flatten() });
+  const d = body.data;
+
+  const branch = await prisma.branch.findFirst({ where: { id: d.branchId, tenantId: p.tenantId } });
+  if (!branch) return res.status(400).json({ error: "Unknown boutique" });
+
+  let customerId = d.customerId;
+  if (!customerId && d.inquiryId) {
+    customerId = (await prisma.inquiry.findFirst({ where: { id: d.inquiryId, tenantId: p.tenantId } }))?.customerId ?? undefined;
+  }
+  if (!customerId) {
+    if (!d.name || d.name.length < 2 || !d.phone || d.phone.replace(/\D/g, "").length < 6)
+      return res.status(400).json({ error: "Please enter the customer's name and phone number." });
+    const existing = await prisma.customer.findFirst({ where: { tenantId: p.tenantId, phone: d.phone } });
+    customerId = (existing ?? (await prisma.customer.create({ data: { tenantId: p.tenantId, name: d.name, phone: d.phone } }))).id;
+  }
+
+  const appt = await prisma.appointment.create({
+    data: {
+      tenantId: p.tenantId, reference: makeRef("APT"), customerId, branchId: branch.id,
+      staffId: d.staffId || p.sub, reason: d.reason, scheduledAt: new Date(d.scheduledAt), status: d.status, notes: d.notes || null,
+    },
+  });
+  if (d.inquiryId) {
+    await prisma.inquiry.updateMany({
+      where: { id: d.inquiryId, tenantId: p.tenantId, status: { in: ["NEW", "QUALIFIED", "QUOTED"] } },
+      data: { status: "APPOINTMENT" },
+    });
+  }
+  await audit({ tenantId: p.tenantId, userId: p.sub, action: "appointment.create", entity: "Appointment", entityId: appt.id });
+  res.status(201).json({ id: appt.id, reference: appt.reference });
+});
+
 salesRouter.patch("/appointments/:id", async (req, res) => {
   const p = req.principal!;
   const body = z
