@@ -4,9 +4,18 @@ import { prisma } from "../prisma.js";
 import { requireStaff, requireRole } from "../middleware/auth.js";
 import { hashPassword } from "../lib/auth.js";
 import { audit } from "../lib/audit.js";
+import { buildInsights } from "../lib/insights.js";
 
 export const adminRouter = Router();
 adminRouter.use(requireStaff);
+
+/* ─────────────── AI insights (auto | live | demo) ─────────────── */
+adminRouter.get("/insights", async (req, res) => {
+  const p = req.principal!;
+  const q = String(req.query.source ?? "auto");
+  const source = q === "live" || q === "demo" ? q : "auto";
+  res.json(await buildInsights(p.tenantId, source));
+});
 
 /* ─────────────── Dashboard ─────────────── */
 adminRouter.get("/dashboard", async (req, res) => {

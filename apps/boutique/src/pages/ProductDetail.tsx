@@ -7,7 +7,7 @@ import { cn } from "@ui";
 import { api } from "@/lib/api";
 import { useStore } from "@/context/store";
 import type { Product } from "@/lib/types";
-import { Badge, Breadcrumb, EASE, LuxuryButton, Price, ProductGrid, SectionHeading, flyToCart, stagger, t, useToast } from "@/design";
+import { Badge, Breadcrumb, EASE, LuxuryButton, fallbackImage, Price, ProductGrid, SectionHeading, flyToCart, stagger, t, useToast } from "@/design";
 
 export default function ProductDetail() {
   const { slug } = useParams();
@@ -70,8 +70,13 @@ export default function ProductDetail() {
 /* ───────────────────────── Gallery ───────────────────────── */
 
 function Gallery({ product }: { product: Product }) {
-  const images = product.media?.filter((m) => m.kind !== "VIDEO").map((m) => m.url) ?? [];
-  if (!images.length && product.image) images.push(product.image);
+  const [broken, setBroken] = useState<Set<string>>(() => new Set());
+  const markBroken = (u: string) => setBroken((b) => (b.has(u) ? b : new Set(b).add(u)));
+  const raw = product.media?.filter((m) => m.kind !== "VIDEO").map((m) => m.url) ?? [];
+  if (!raw.length && product.image) raw.push(product.image);
+  // Broken links are swapped for a rendered likeness of the piece, so the gallery never shows an empty frame.
+  const images = raw.length ? raw.map((u) => (broken.has(u) ? fallbackImage(product) : u)) : [fallbackImage(product)];
+  const onBroken = (u?: string) => { if (u && raw.includes(u)) markBroken(u); };
   const [idx, setIdx] = useState(0);
   const [dir, setDir] = useState(1);
   const [full, setFull] = useState(false);
@@ -84,7 +89,7 @@ function Gallery({ product }: { product: Product }) {
           <div className="hidden w-[72px] shrink-0 flex-col gap-3 md:flex">
             {images.map((src, i) => (
               <button key={src + i} onClick={() => go(i)} aria-label={`View image ${i + 1}`} className={cn("relative aspect-[4/5] overflow-hidden rounded-xl transition-opacity duration-500", i === idx ? "opacity-100" : "opacity-50 hover:opacity-90")}>
-                <img src={src} alt="" className="size-full object-cover" />
+                <img src={src} alt="" onError={() => onBroken(raw[i])} className="size-full object-cover" />
                 {i === idx && <motion.span layoutId="thumb-ring" className="absolute inset-0 rounded-xl ring-1 ring-inset ring-foreground" transition={{ type: "spring", stiffness: 400, damping: 34 }} />}
               </button>
             ))}
@@ -92,7 +97,7 @@ function Gallery({ product }: { product: Product }) {
         )}
 
         <div className="relative flex-1">
-          <ZoomStage src={images[idx]} alt={product.name} dir={dir} onNext={() => go(idx + 1)} onPrev={() => go(idx - 1)} count={images.length} onExpand={() => setFull(true)} />
+          <ZoomStage src={images[idx]} onBroken={() => onBroken(raw[idx])} alt={product.name} dir={dir} onNext={() => go(idx + 1)} onPrev={() => go(idx - 1)} count={images.length} onExpand={() => setFull(true)} />
           <div className="absolute left-4 top-4 flex gap-1.5">
             {product.isNew && <Badge tone="new">New</Badge>}
             {product.certNumber && <Badge tone="new"><BadgeCheck className="size-3 text-brand-deep" />{product.certIssuer ?? "Certified"}</Badge>}
@@ -110,7 +115,7 @@ function Gallery({ product }: { product: Product }) {
 }
 
 /** Main image: hover lens zoom on desktop, swipe on touch. */
-function ZoomStage({ src, alt, dir, onNext, onPrev, count, onExpand }: { src?: string; alt: string; dir: number; onNext: () => void; onPrev: () => void; count: number; onExpand: () => void }) {
+function ZoomStage({ src, alt, dir, onNext, onPrev, count, onExpand, onBroken }: { src?: string; onBroken?: () => void; alt: string; dir: number; onNext: () => void; onPrev: () => void; count: number; onExpand: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState<{ x: number; y: number } | null>(null);
   const onMove = (e: React.PointerEvent) => {
@@ -142,6 +147,7 @@ function ZoomStage({ src, alt, dir, onNext, onPrev, count, onExpand }: { src?: s
             dragElastic={0.25}
             onDragEnd={(_, i) => { if (i.offset.x < -60) onNext(); else if (i.offset.x > 60) onPrev(); }}
             onClick={onExpand}
+            onError={onBroken}
             draggable={false}
             className="absolute inset-0 size-full touch-pan-y object-cover"
           />

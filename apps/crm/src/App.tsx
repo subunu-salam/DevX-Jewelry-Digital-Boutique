@@ -14,6 +14,8 @@ import Offers from "./pages/Offers";
 import GoldRate from "./pages/GoldRate";
 import Branches from "./pages/Branches";
 import Team from "./pages/Team";
+import Insights from "./pages/Insights";
+import { ToastHost } from "./components/lux";
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -22,7 +24,7 @@ function Protected({ children }: { children: React.ReactNode }) {
     return <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Loading…</div>;
   }
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
-  return <Layout>{children}</Layout>;
+  return <ToastHost><Layout>{children}</Layout></ToastHost>;
 }
 
 export default function App() {
@@ -41,6 +43,7 @@ export default function App() {
       <Route path="/gold" element={<Protected><GoldRate /></Protected>} />
       <Route path="/branches" element={<Protected><Branches /></Protected>} />
       <Route path="/team" element={<Protected><Team /></Protected>} />
+      <Route path="/insights" element={<Protected><Insights /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

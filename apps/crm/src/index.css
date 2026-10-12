@@ -100,3 +100,19 @@
   .rise, .bar-grow, .pulse-dot, .skeleton, .lux-sheen:hover::after { animation: none !important; }
   .lux-card, .lux-card:hover { transform: none; transition: none; }
 }
+
+@keyframes toast-in { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+.toast-in { animation: toast-in .45s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes lane-glow { 0%, 100% { box-shadow: inset 0 0 0 1px rgba(212,175,106,.35); } 50% { box-shadow: inset 0 0 0 1px rgba(212,175,106,.75), 0 0 28px -10px rgba(212,175,106,.6); } }
+.lane-drop { animation: lane-glow 1.2s ease-in-out infinite; background: rgba(212,175,106,.05); }
+.card-lift { transition: transform .35s cubic-bezier(.22,1,.36,1), border-color .35s, box-shadow .35s; }
+.card-lift:hover { transform: translateY(-2px); border-color: rgba(212,175,106,.4); box-shadow: 0 16px 34px -22px rgba(0,0,0,.9); }
+.dragging { opacity: .45; transform: scale(.97) rotate(-1deg); }
+@media (prefers-reduced-motion: reduce) { .toast-in, .lane-drop { animation: none !important; } .card-lift:hover { transform: none; } }
+
+/* Drawer buttons */
+.btn-gold { display: inline-flex; height: 2.25rem; align-items: center; justify-content: center; gap: .375rem; border-radius: .5rem; background: var(--color-primary); padding: 0 .875rem; font-size: .875rem; font-weight: 500; color: var(--color-primary-foreground); box-shadow: 0 0 20px -8px rgba(212,175,106,.6); transition: background .2s, transform .2s; }
+.btn-gold:hover { background: color-mix(in oklab, var(--color-primary) 90%, black); }
+.btn-gold:active, .btn-line:active { transform: scale(.98); }
+.btn-line { display: inline-flex; height: 2.25rem; align-items: center; justify-content: center; gap: .375rem; border-radius: .5rem; border: 1px solid var(--color-border); padding: 0 .875rem; font-size: .875rem; transition: border-color .2s, color .2s, transform .2s; }
+.btn-line:hover { border-color: rgba(212,175,106,.5); color: var(--color-primary); }

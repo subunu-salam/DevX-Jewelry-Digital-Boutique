@@ -4,7 +4,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { ArrowRight, BadgeCheck, CalendarClock, KeyRound, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Product, Storefront } from "@/lib/types";
-import { EASE, LuxuryButton, OpeningScreen, Price, lineUp, reveal, stagger, t } from "@/design";
+import { EASE, JewelImage, LuxuryButton, OpeningScreen, Price, fallbackImage, lineUp, reveal, stagger, t } from "@/design";
 
 /**
  * Centre arch image. Leave null to use the first collection's cover photo, or set a URL
@@ -70,7 +70,7 @@ export default function Home() {
                   <span className="w-5 font-serif text-[15px] italic text-brand-deep">{String(idx + 1).padStart(2, "0")}</span>
                   <span className="shrink-0 rounded-full border border-brand/45 p-[3px] transition-colors duration-500 group-hover:border-brand">
                     <span className="block size-[52px] overflow-hidden rounded-full bg-champagne">
-                      {c.heroImage && <img src={c.heroImage} alt="" loading="lazy" className="size-full object-cover transition-transform duration-[1400ms] ease-[var(--ease-lux)] group-hover:scale-110" />}
+                      <JewelImage src={c.heroImage} alt="" loading="lazy" className="transition-[opacity,transform] duration-[1400ms] ease-[var(--ease-lux)] group-hover:scale-110" />
                     </span>
                   </span>
                   <span className="min-w-0 flex-1">
@@ -106,7 +106,7 @@ export default function Home() {
           <motion.div {...reveal} className="flex items-center gap-4 px-4">
             <Link to={`/product/${signature.slug}`} className="group w-[45%] shrink-0 rounded-2xl border border-brand/45 bg-surface p-1.5">
               <div className="aspect-[4/5] overflow-hidden rounded-[10px] bg-champagne">
-                <img src={signature.image as string} alt={signature.name} loading="lazy" className="size-full object-cover transition-transform duration-[1600ms] ease-[var(--ease-lux)] group-hover:scale-[1.06]" />
+                <JewelImage src={signature.image} piece={signature} alt={signature.name} loading="lazy" className="transition-[opacity,transform] duration-[1600ms] ease-[var(--ease-lux)] group-hover:scale-[1.06]" />
               </div>
             </Link>
             <div className="flex min-w-0 flex-col gap-2">
@@ -155,10 +155,10 @@ function Rule({ children }: { children: React.ReactNode }) {
  */
 function Triptych({ pieces, centreImage, centreLink, loading }: { pieces: Product[]; centreImage?: string | null; centreLink?: string; loading: boolean }) {
   const reduced = useReducedMotion();
-  const slots: { image?: string | null; to?: string; alt: string }[] = [
-    { image: pieces[0]?.image, to: pieces[0] && `/product/${pieces[0].slug}`, alt: pieces[0]?.name ?? "" },
-    { image: centreImage ?? pieces[1]?.image, to: centreLink ?? (pieces[1] && `/product/${pieces[1].slug}`), alt: "The collection" },
-    { image: pieces[2]?.image, to: pieces[2] && `/product/${pieces[2].slug}`, alt: pieces[2]?.name ?? "" },
+  const slots: { image?: string | null; to?: string; alt: string; fallback: string }[] = [
+    { image: pieces[0]?.image, to: pieces[0] && `/product/${pieces[0].slug}`, alt: pieces[0]?.name ?? "", fallback: fallbackImage(pieces[0]) },
+    { image: centreImage ?? pieces[1]?.image, to: centreLink ?? (pieces[1] && `/product/${pieces[1].slug}`), alt: "The collection", fallback: fallbackImage(pieces[1]) },
+    { image: pieces[2]?.image, to: pieces[2] && `/product/${pieces[2].slug}`, alt: pieces[2]?.name ?? "", fallback: fallbackImage(pieces[2]) },
   ];
   return (
     <div className="grid grid-cols-3 items-end gap-2">
@@ -177,6 +177,7 @@ function Triptych({ pieces, centreImage, centreLink, loading }: { pieces: Produc
               <motion.img
                 src={p.image}
                 alt={p.alt}
+                onError={(e) => { const img = e.currentTarget; if (img.src !== p.fallback) img.src = p.fallback; }}
                 loading={k === 1 ? "eager" : "lazy"}
                 initial={{ scale: 1.15 }}
                 animate={reduced ? { scale: 1 } : k === 1 ? { scale: [1.04, 1.1, 1.04] } : { scale: 1 }}

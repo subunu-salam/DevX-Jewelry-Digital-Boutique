@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { requireStaff } from "../middleware/auth.js";
 import { audit, makeRef } from "../lib/audit.js";
+import { scoreLead } from "../lib/insights.js";
 
 export const salesRouter = Router();
 salesRouter.use(requireStaff);
@@ -19,11 +20,16 @@ salesRouter.get("/inquiries", async (req, res) => {
       branch: true,
       assignedTo: true,
       items: true,
+      quotations: { select: { id: true, reference: true, status: true, total: true, createdAt: true }, orderBy: { createdAt: "desc" } },
       _count: { select: { items: true } },
     },
   });
+  const now = new Date();
   res.json(
     inquiries.map((i) => ({
+      ai: scoreLead({ id: i.id, reference: i.reference, customer: i.customer?.name ?? "Guest", status: i.status, source: i.source, budget: i.budget, items: i._count.items, createdAt: i.createdAt, branch: i.branch?.name ?? null, occasion: i.occasion }, now),
+      quotes: i.quotations,
+      customerEmail: i.customer?.email ?? null,
       id: i.id,
       reference: i.reference,
       status: i.status,
@@ -176,10 +182,15 @@ salesRouter.get("/quotes", async (req, res) => {
   const quotes = await prisma.quotation.findMany({
     where: { tenantId: p.tenantId },
     orderBy: { createdAt: "desc" },
-    include: { customer: true, branch: true, _count: { select: { items: true } } },
+    include: { customer: true, branch: true, invoice: { select: { id: true, reference: true } }, items: { select: { description: true }, take: 3 }, _count: { select: { items: true } } },
   });
   res.json(
     quotes.map((q) => ({
+      inquiryId: q.inquiryId,
+      customerPhone: q.customer?.phone ?? null,
+      itemNames: q.items.map((it) => it.description),
+      invoice: q.invoice,
+      updatedAt: q.updatedAt,
       id: q.id,
       reference: q.reference,
       status: q.status,
