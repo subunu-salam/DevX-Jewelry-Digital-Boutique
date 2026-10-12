@@ -116,3 +116,12 @@
 .btn-gold:active, .btn-line:active { transform: scale(.98); }
 .btn-line { display: inline-flex; height: 2.25rem; align-items: center; justify-content: center; gap: .375rem; border-radius: .5rem; border: 1px solid var(--color-border); padding: 0 .875rem; font-size: .875rem; transition: border-color .2s, color .2s, transform .2s; }
 .btn-line:hover { border-color: rgba(212,175,106,.5); color: var(--color-primary); }
+
+/* Quote / invoice preview — print only the paper */
+@media print {
+  body * { visibility: hidden !important; }
+  .print-doc, .print-doc * { visibility: visible !important; }
+  .print-root { position: static !important; background: none !important; padding: 0 !important; overflow: visible !important; }
+  .print-doc { position: absolute; left: 0; top: 0; box-shadow: none !important; max-width: none !important; border-radius: 0 !important; }
+  .no-print { display: none !important; }
+}

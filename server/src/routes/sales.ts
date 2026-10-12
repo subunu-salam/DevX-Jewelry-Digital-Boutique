@@ -185,6 +185,30 @@ salesRouter.get("/customers", async (req, res) => {
   );
 });
 
+/* Add a customer manually (walk-in, phone, referral…) */
+salesRouter.post("/customers", async (req, res) => {
+  const p = req.principal!;
+  const body = z
+    .object({
+      name: z.string().trim().min(2),
+      phone: z.string().trim().min(6),
+      email: z.string().email().optional().or(z.literal("")),
+      segment: z.enum(["new", "repeat", "high_value", "inactive"]).default("new"),
+      marketingConsent: z.boolean().default(false),
+      notes: z.string().optional(),
+    })
+    .safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "Please enter a name and a valid phone number." });
+  const d = body.data;
+  const dup = await prisma.customer.findFirst({ where: { tenantId: p.tenantId, phone: d.phone } });
+  if (dup) return res.status(409).json({ error: `${dup.name} already has this phone number.`, id: dup.id });
+  const c = await prisma.customer.create({
+    data: { tenantId: p.tenantId, name: d.name, phone: d.phone, email: d.email || null, segment: d.segment, marketingConsent: d.marketingConsent, notes: d.notes || null },
+  });
+  await audit({ tenantId: p.tenantId, userId: p.sub, action: "customer.create", entity: "Customer", entityId: c.id });
+  res.status(201).json({ id: c.id, name: c.name });
+});
+
 salesRouter.get("/customers/:id", async (req, res) => {
   const p = req.principal!;
   const c = await prisma.customer.findFirst({
@@ -203,6 +227,7 @@ salesRouter.get("/customers/:id", async (req, res) => {
 const quoteSchema = z.object({
   inquiryId: z.string().optional(),
   customerId: z.string().optional(),
+  customer: z.object({ name: z.string().trim().min(2), phone: z.string().trim().min(6), email: z.string().email().optional().or(z.literal("")) }).optional(),
   branchId: z.string().optional(),
   taxRate: z.number().default(5),
   discount: z.number().default(0),
@@ -255,6 +280,14 @@ salesRouter.post("/quotes", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Invalid payload", detail: parsed.error.flatten() });
   const p = req.principal!;
   const d = parsed.data;
+  if (!d.customerId && d.customer) {
+    const c = d.customer;
+    const existing = await prisma.customer.findFirst({ where: { tenantId: p.tenantId, phone: c.phone } });
+    d.customerId = (existing ?? (await prisma.customer.create({ data: { tenantId: p.tenantId, name: c.name, phone: c.phone, email: c.email || null } }))).id;
+  }
+  if (!d.customerId && d.inquiryId) {
+    d.customerId = (await prisma.inquiry.findFirst({ where: { id: d.inquiryId, tenantId: p.tenantId } }))?.customerId ?? undefined;
+  }
 
   const items = d.items.map((it) => {
     const lineTotal = (it.metalValue + it.makingValue + it.stoneValue) * it.quantity;

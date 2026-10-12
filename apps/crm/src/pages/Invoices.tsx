@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { aed, date } from "@/lib/format";
+import { Eye } from "lucide-react";
 import { Badge, Button, Card, PageHeader, EmptyState } from "@/components/ui";
+import DocPreview, { invoiceToDoc, type DocData } from "@/components/DocPreview";
 
 interface Invoice {
   id: string; reference: string; status: string; customerName: string; branchName: string | null;
@@ -10,6 +12,11 @@ interface Invoice {
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [doc, setDoc] = useState<DocData | null>(null);
+  const [docInv, setDocInv] = useState<Invoice | null>(null);
+  async function preview(inv: Invoice) {
+    try { setDoc(invoiceToDoc(await api.get(`/api/crm/sales/invoices/${inv.id}`))); setDocInv(inv); } catch { /* ignore */ }
+  }
   async function load() { setInvoices(await api.get<Invoice[]>("/api/crm/sales/invoices")); }
   useEffect(() => { load().catch(() => {}); }, []);
 
@@ -54,7 +61,10 @@ export default function Invoices() {
                     <td className="px-4 py-3 text-muted-foreground">{date(i.issuedAt)}</td>
                     <td className="px-4 py-3"><Badge tone={i.status}>{i.status}</Badge></td>
                     <td className="px-4 py-3 text-right">
-                      {i.status !== "PAID" && <Button size="sm" variant="outline" onClick={() => markPaid(i)}>Mark paid</Button>}
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="outline" onClick={() => preview(i)}><Eye className="size-3.5" /> Preview</Button>
+                        {i.status !== "PAID" && <Button size="sm" variant="outline" onClick={() => markPaid(i)}>Mark paid</Button>}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -63,6 +73,11 @@ export default function Invoices() {
           </div>
         )}
       </Card>
+      <DocPreview
+        d={doc}
+        onClose={() => { setDoc(null); setDocInv(null); }}
+        actions={docInv && docInv.status !== "PAID" ? <button onClick={() => { markPaid(docInv); setDoc((d) => (d ? { ...d, status: "PAID", amountPaid: d.total } : d)); setDocInv(null); }} className="inline-flex h-9 items-center rounded-lg border border-white/20 px-3 text-sm text-white hover:bg-white/10">Mark paid</button> : null}
+      />
     </div>
   );
 }
