@@ -5,6 +5,7 @@ import { ArrowDownRight, ArrowRight, ArrowUpRight, Flame, Info, Sparkles, Target
 import { cn } from "@ui";
 import { aed } from "@/lib/format";
 import { useInsights, type Source } from "@/lib/insights";
+import TrackRecord from "@/components/TrackRecord";
 import { BAND, Count, DemoBadge, Empty, GOLD, GRID, INK, InsightCard, MUTED, Ring, SectionHeader, Segmented, aedShort, initials, tooltipStyle } from "@/components/lux";
 
 const SOURCES: { value: Source; label: string }[] = [
@@ -117,6 +118,9 @@ export default function Insights() {
               ) : <Empty text="Nothing needs action — running to pattern." />}
             </section>
           </div>
+
+          {/* Track record: predictions vs actuals, recommendation success */}
+          <TrackRecord weeklyScale={data.kpis.forecast7} live={data.source === "live"} delay={250} />
 
           {/* Lead scores */}
           <section className="lux-card rise mt-5 p-5" style={next()}>
