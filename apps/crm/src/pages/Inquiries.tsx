@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Clock, FileText, Flame, Globe, MessageCircle, Phone, Search, Store, UserRound, X } from "lucide-react";
+import { AtSign, Clock, FileText, Flame, Globe, MessageCircle, Phone, Plus, Search, Store, UserPlus, UserRound, X } from "lucide-react";
 import { cn } from "@ui";
 import { api } from "@/lib/api";
 import { aed, datetime } from "@/lib/format";
 import { Badge, Select } from "@/components/ui";
 import { BAND, Count, Drawer, Empty, Ring, aedShort, initials, useToast } from "@/components/lux";
 import QuoteModal from "@/components/QuoteModal";
+import NewLeadModal from "@/components/NewLeadModal";
 
 interface Inquiry {
   id: string; reference: string; status: string; source: string;
@@ -25,6 +26,7 @@ const STAGE_DOT: Record<string, string> = { NEW: "bg-info", QUALIFIED: "bg-warni
 const SOURCE: Record<string, { label: string; icon: typeof Globe }> = {
   boutique: { label: "Online", icon: Globe }, whatsapp: { label: "WhatsApp", icon: MessageCircle },
   walk_in: { label: "Walk-in", icon: Store }, phone: { label: "Phone", icon: Phone },
+  instagram: { label: "Instagram", icon: AtSign }, referral: { label: "Referral", icon: UserPlus },
 };
 const HOUR = 36e5;
 
@@ -42,6 +44,7 @@ export default function Inquiries() {
   const [inquiries, setInquiries] = useState<Inquiry[] | null>(null);
   const [team, setTeam] = useState<TeamUser[]>([]);
   const [quoteFor, setQuoteFor] = useState<Inquiry | null>(null);
+  const [newLead, setNewLead] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [branch, setBranch] = useState("");
@@ -107,7 +110,10 @@ export default function Inquiries() {
           <h1 className="text-[28px] font-semibold tracking-tight">Leads</h1>
           <p className="mt-1 text-sm text-muted-foreground">Drag a card to move its stage. Every boutique inquiry lands here, scored by AI.</p>
         </div>
-        <Link to="/insights" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3.5 text-sm transition-colors hover:border-primary/50 hover:text-primary"><Flame className="size-4" /> Who to call first</Link>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/insights" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3.5 text-sm transition-colors hover:border-primary/50 hover:text-primary"><Flame className="size-4" /> Who to call first</Link>
+          <button onClick={() => setNewLead(true)} className="btn-gold inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-sm font-semibold"><Plus className="size-4" /> New lead</button>
+        </div>
       </div>
 
       {/* KPI strip */}
@@ -201,6 +207,13 @@ export default function Inquiries() {
           onSaved={() => { setQuoteFor(null); toast("Quotation created — lead moved to Quoted"); load(); }}
         />
       )}
+
+      <NewLeadModal
+        open={newLead}
+        team={team}
+        onClose={() => setNewLead(false)}
+        onSaved={(ref) => { setNewLead(false); toast(`Lead ${ref} created`); load(); }}
+      />
     </div>
   );
 }
