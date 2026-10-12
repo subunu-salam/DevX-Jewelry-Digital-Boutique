@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AtSign, Clock, FileText, Flame, Globe, MessageCircle, Phone, Plus, Search, Store, UserPlus, UserRound, X } from "lucide-react";
+import { AtSign, CalendarPlus, Clock, FileText, Flame, Globe, MessageCircle, Phone, Plus, Search, Store, UserPlus, UserRound, X } from "lucide-react";
 import { cn } from "@ui";
 import { api } from "@/lib/api";
 import { aed, datetime } from "@/lib/format";
@@ -8,6 +8,7 @@ import { Badge, Select } from "@/components/ui";
 import { BAND, Count, Drawer, Empty, Ring, aedShort, initials, useToast } from "@/components/lux";
 import QuoteModal from "@/components/QuoteModal";
 import NewLeadModal from "@/components/NewLeadModal";
+import ScheduleModal from "@/components/ScheduleModal";
 
 interface Inquiry {
   id: string; reference: string; status: string; source: string;
@@ -45,6 +46,7 @@ export default function Inquiries() {
   const [team, setTeam] = useState<TeamUser[]>([]);
   const [quoteFor, setQuoteFor] = useState<Inquiry | null>(null);
   const [newLead, setNewLead] = useState(false);
+  const [bookFor, setBookFor] = useState<Inquiry | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [branch, setBranch] = useState("");
@@ -191,6 +193,7 @@ export default function Inquiries() {
         footer={open && (
           <div className="flex gap-2">
             <button onClick={() => { setQuoteFor(open); }} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary text-sm font-medium text-primary-foreground shadow-[0_0_20px_-8px_rgba(212,175,106,.6)] transition hover:bg-primary/90"><FileText className="size-4" /> Create quote</button>
+            <button onClick={() => setBookFor(open)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-sm transition hover:border-primary/50 hover:text-primary"><CalendarPlus className="size-4" /> Book</button>
             {open.customerPhone && <a href={waLink(open.customerPhone, open.customerName, open.reference)} target="_blank" rel="noopener noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-sm transition hover:border-success/50 hover:text-success"><MessageCircle className="size-4" /> WhatsApp</a>}
           </div>
         )}
@@ -207,6 +210,13 @@ export default function Inquiries() {
           onSaved={() => { setQuoteFor(null); toast("Quotation created — lead moved to Quoted"); load(); }}
         />
       )}
+
+      <ScheduleModal
+        open={!!bookFor}
+        prefill={bookFor ? { inquiryId: bookFor.id, name: bookFor.customerName, phone: bookFor.customerPhone, branchName: bookFor.branchName, reason: bookFor.occasion === "Bridal" ? "Bridal consultation" : undefined } : null}
+        onClose={() => setBookFor(null)}
+        onSaved={(ref) => { setBookFor(null); toast(`Appointment ${ref} booked — lead moved to Appointment`); load(); }}
+      />
 
       <NewLeadModal
         open={newLead}
