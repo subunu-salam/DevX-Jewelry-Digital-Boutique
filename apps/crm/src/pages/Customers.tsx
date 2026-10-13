@@ -20,7 +20,12 @@ export default function Customers() {
   const [quoteFor, setQuoteFor] = useState<Customer | null>(null);
   const [q, setQ] = useState("");
   const load = () => api.get<Customer[]>("/api/crm/sales/customers").then(setCustomers).catch(() => {});
-  useEffect(() => { load(); }, []);
+  const [tiers, setTiers] = useState<Record<string, { tier: string; risk: string }>>({});
+  useEffect(() => {
+    load();
+    api.get<{ source: string; clients: { id: string; tier: string; risk: string }[] }>("/api/crm/retention?source=live")
+      .then((r) => setTiers(Object.fromEntries(r.clients.map((c) => [c.id, { tier: c.tier, risk: c.risk }])))).catch(() => {});
+  }, []);
   const shown = customers.filter((c) => !q || `${c.name} ${c.phone} ${c.email ?? ""}`.toLowerCase().includes(q.toLowerCase()));
 
   return (
@@ -55,7 +60,9 @@ export default function Customers() {
                       <div className="flex items-center gap-3">
                         <div className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{c.name.charAt(0)}</div>
                         <div>
-                          <div className="font-medium">{c.name} {c.hasAccount && <span className="ml-1 text-[10px] text-primary">● account</span>}</div>
+                          <div className="font-medium">{c.name} {c.hasAccount && <span className="ml-1 text-[10px] text-primary">● account</span>}
+                            {tiers[c.id] && <span className="ml-1.5 rounded-full border border-primary/40 bg-primary/10 px-1.5 py-px text-[10px] font-semibold text-primary">{tiers[c.id].tier}</span>}
+                            {tiers[c.id] && (tiers[c.id].risk === "At risk" || tiers[c.id].risk === "Lapsed") && <span className="ml-1 rounded-full bg-warning-bg px-1.5 py-px text-[10px] text-warning">{tiers[c.id].risk}</span>}</div>
                           <div className="text-xs text-muted-foreground">{c.phone}{c.email ? ` · ${c.email}` : ""}</div>
                         </div>
                       </div>

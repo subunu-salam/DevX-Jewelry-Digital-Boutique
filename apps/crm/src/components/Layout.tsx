@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import {
   LayoutDashboard, Gem, MessageSquare, CalendarClock, Users, FileText, Receipt,
-  Truck, Tag, TrendingUp, Building2, UsersRound, LogOut, Menu, ChevronDown, Sparkles,
+  Truck, Tag, TrendingUp, Building2, UsersRound, LogOut, Menu, ChevronDown, Sparkles, HeartHandshake, PhoneCall, Megaphone,
 } from "lucide-react";
 import { useAuth, roleLabel } from "@/context/auth";
 import { cn } from "@ui";
@@ -14,10 +14,13 @@ const NAV = [
   { to: "/inquiries", label: "Leads / Inquiries", icon: MessageSquare },
   { to: "/appointments", label: "Appointments", icon: CalendarClock },
   { to: "/customers", label: "Customers", icon: Users },
+  { to: "/retention", label: "Loyalty & Retention", icon: HeartHandshake },
+  { to: "/calls", label: "Telecalling", icon: PhoneCall },
   { to: "/quotes", label: "Quotations", icon: FileText },
   { to: "/invoices", label: "Invoices", icon: Receipt },
   { to: "/suppliers", label: "Suppliers", icon: Truck },
   { to: "/offers", label: "Campaigns & Offers", icon: Tag },
+  { to: "/marketing", label: "Marketing Analytics", icon: Megaphone },
   { to: "/gold", label: "Gold Rate", icon: TrendingUp },
   { to: "/branches", label: "Branches", icon: Building2 },
   { to: "/team", label: "Team & Settings", icon: UsersRound },

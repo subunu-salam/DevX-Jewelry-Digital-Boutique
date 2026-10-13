@@ -96,6 +96,7 @@ model Tenant {
   offers       Offer[]
   goldPrices   GoldPriceObservation[]
   auditLogs    AuditLog[]
+  callTasks    CallTask[]
 }
 
 model User {
@@ -118,6 +119,7 @@ model User {
   quotations         Quotation[]
   invoices           Invoice[]
   auditLogs          AuditLog[]
+  callTasks          CallTask[]    @relation("CallAssignee")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -286,6 +288,7 @@ model Customer {
   appointments Appointment[]
   quotations   Quotation[]
   invoices     Invoice[]
+  callTasks    CallTask[]
 
   @@unique([tenantId, phone])
   @@index([tenantId])
@@ -505,4 +508,35 @@ model AuditLog {
   user   User?  @relation(fields: [userId], references: [id])
 
   @@index([tenantId])
+}
+
+// ─────────────────────── Retention / telecalling ───────────────────────
+// A follow-up call for the retention team. Customer name/phone are snapshotted so
+// tasks raised from demo insights (no customer row) still work.
+model CallTask {
+  id            String    @id @default(cuid())
+  tenantId      String
+  customerId    String?
+  customerName  String
+  customerPhone String?
+  assignedToId  String?
+  source        String    @default("manual") // churn | lead | manual
+  reason        String
+  tier          String?
+  priority      String    @default("MEDIUM") // HIGH | MEDIUM | LOW
+  status        String    @default("OPEN")   // OPEN | DONE
+  outcome       String?   // REACHED | NO_ANSWER | CALLBACK | VISIT_BOOKED | NOT_INTERESTED | WRONG_NUMBER
+  notes         String?
+  attempts      Int       @default(0)
+  dueAt         DateTime  @default(now())
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  assignedTo User?     @relation("CallAssignee", fields: [assignedToId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([assignedToId])
 }
