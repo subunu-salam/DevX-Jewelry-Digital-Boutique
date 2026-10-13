@@ -25,6 +25,11 @@ const PHOTOS = {
 };
 
 async function main() {
+  // The build runs this on every deploy — never wipe a live database unless explicitly asked.
+  if (process.env.SEED_RESET !== "1" && (await prisma.tenant.count()) > 0) {
+    console.log("✓ Database already seeded — keeping existing data (set SEED_RESET=1 to reset).");
+    return;
+  }
   console.log("⟳ Resetting database…");
   // Clean in FK-safe order
   await prisma.auditLog.deleteMany();

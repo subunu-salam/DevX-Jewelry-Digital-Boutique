@@ -6,6 +6,9 @@ import Dashboard from "./pages/Dashboard";
 import Catalog from "./pages/Catalog";
 import Inquiries from "./pages/Inquiries";
 import Appointments from "./pages/Appointments";
+import Retention from "./pages/Retention";
+import Calls from "./pages/Calls";
+import Marketing from "./pages/Marketing";
 import Customers from "./pages/Customers";
 import Quotes from "./pages/Quotes";
 import Invoices from "./pages/Invoices";
@@ -44,6 +47,9 @@ export default function App() {
       <Route path="/branches" element={<Protected><Branches /></Protected>} />
       <Route path="/team" element={<Protected><Team /></Protected>} />
       <Route path="/insights" element={<Protected><Insights /></Protected>} />
+      <Route path="/retention" element={<Protected><Retention /></Protected>} />
+      <Route path="/calls" element={<Protected><Calls /></Protected>} />
+      <Route path="/marketing" element={<Protected><Marketing /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

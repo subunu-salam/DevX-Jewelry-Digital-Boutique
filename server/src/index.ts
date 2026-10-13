@@ -7,6 +7,7 @@ import { productRouter } from "./routes/products.js";
 import { salesRouter } from "./routes/sales.js";
 import { adminRouter } from "./routes/admin.js";
 import { aiRouter } from "./routes/ai.js";
+import { retentionRouter } from "./routes/retention.js";
 import { startGoldWorker } from "./lib/goldIngest.js";
 
 const app = express();
@@ -46,6 +47,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/crm/products", productRouter);
 app.use("/api/crm/sales", salesRouter);
 app.use("/api/crm/admin", adminRouter);
+app.use("/api/crm/retention", retentionRouter);
 // AI features (visual search, catalog studio, intelligence)
 app.use("/api/ai", aiRouter);
 

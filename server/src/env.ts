@@ -26,6 +26,11 @@ export const env = {
   GOLDAPI_KEY: process.env.GOLDAPI_KEY ?? "",
   METALSDEV_KEY: process.env.METALSDEV_KEY ?? "",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
+  // Instagram / Meta ads (Marketing Analytics). Leave empty to show sample data.
+  META_ACCESS_TOKEN: process.env.META_ACCESS_TOKEN ?? "",
+  META_AD_ACCOUNT_ID: (process.env.META_AD_ACCOUNT_ID ?? "").replace(/^act_/, ""),
+  META_IG_USER_ID: process.env.META_IG_USER_ID ?? "",
+  META_API_VERSION: process.env.META_API_VERSION ?? "v21.0",
   GOLD_INGEST_INTERVAL_MINUTES: Number(
     process.env.GOLD_INGEST_INTERVAL_MINUTES ?? 60,
   ),
