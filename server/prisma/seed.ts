@@ -32,6 +32,10 @@ async function main() {
   }
   console.log("⟳ Resetting database…");
   // Clean in FK-safe order
+  await prisma.goldPlanPayment.deleteMany();
+  await prisma.goldPlan.deleteMany();
+  await prisma.offerRequest.deleteMany();
+  await prisma.callTask.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.invoiceItem.deleteMany();
   await prisma.invoice.deleteMany();

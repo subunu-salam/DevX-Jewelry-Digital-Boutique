@@ -39,7 +39,8 @@ const taskIn = z.object({
   reason: z.string().trim().min(2).max(500),
   tier: z.string().optional().nullable(),
   priority: z.enum(["HIGH", "MEDIUM", "LOW"]).default("MEDIUM"),
-  source: z.enum(["churn", "lead", "manual"]).default("manual"),
+  source: z.enum(["churn", "recurring", "lead", "manual"]).default("manual"),
+  segment: z.enum(["ONE_TIME", "SECOND_TIME", "RECURRING", "CONTINUOUS"]).optional().nullable(),
   dueAt: z.string().optional(),
   assignedToId: z.string().optional().nullable(),
   notes: z.string().optional(),
@@ -56,7 +57,7 @@ async function createTasks(tenantId: string, userId: string, items: z.infer<type
     data: fresh.map((t) => ({
       tenantId, customerId: t.customerId && realIds.has(t.customerId) ? t.customerId : null,
       customerName: t.customerName, customerPhone: t.customerPhone ?? null, reason: t.reason, tier: t.tier ?? null,
-      priority: t.priority, source: t.source, notes: t.notes ?? null,
+      priority: t.priority, source: t.source, notes: t.notes ?? null, segment: t.segment ?? null,
       dueAt: t.dueAt ? new Date(t.dueAt) : new Date(), assignedToId: t.assignedToId || null,
     })),
   });
@@ -91,6 +92,8 @@ retentionRouter.patch("/calls/:id", async (req, res) => {
     nextAt: z.string().optional(),
     assignedToId: z.string().nullable().optional(),
     priority: z.enum(["HIGH", "MEDIUM", "LOW"]).optional(),
+    lostReason: z.string().max(120).optional().nullable(),
+    feedback: z.string().max(2000).optional().nullable(),
   }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: "Invalid update" });
   const t = await prisma.callTask.findFirst({ where: { id: req.params.id, tenantId: p.tenantId } });
@@ -109,6 +112,8 @@ retentionRouter.patch("/calls/:id", async (req, res) => {
       dueAt: retry ? (d.nextAt ? new Date(d.nextAt) : new Date(Date.now() + (d.outcome === "NO_ANSWER" ? 4 * 36e5 : 864e5))) : undefined,
       assignedToId: d.assignedToId === undefined ? undefined : d.assignedToId,
       priority: d.priority,
+      lostReason: d.lostReason === undefined ? undefined : d.lostReason,
+      feedback: d.feedback === undefined ? undefined : d.feedback,
     },
   });
   await audit({ tenantId: p.tenantId, userId: p.sub, action: "calls.update", entity: "CallTask", entityId: t.id, meta: d });

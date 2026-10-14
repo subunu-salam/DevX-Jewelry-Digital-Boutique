@@ -4,6 +4,7 @@ import Home from "./pages/Home";
 import Catalog from "./pages/Catalog";
 import ProductDetail from "./pages/ProductDetail";
 import GoldRate from "./pages/GoldRate";
+import GoldSavings from "./pages/GoldSavings";
 import Cart from "./pages/Cart";
 import Appointments from "./pages/Appointments";
 import Offers from "./pages/Offers";
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="/catalog" element={<Catalog />} />
         <Route path="/product/:slug" element={<ProductDetail />} />
         <Route path="/gold-rate" element={<Narrow><GoldRate /></Narrow>} />
+        <Route path="/gold-savings" element={<GoldSavings />} />
         <Route path="/cart" element={<Narrow><Cart /></Narrow>} />
         <Route path="/appointments" element={<Narrow><Appointments /></Narrow>} />
         <Route path="/offers" element={<Narrow><Offers /></Narrow>} />

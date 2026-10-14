@@ -213,7 +213,7 @@ export default function Retention() {
               <div className="mb-1 text-xs font-semibold text-primary">{open.actionLabel} · suggested message</div>
               <p className="leading-6">{open.script}</p>
             </div>
-            <Link to="/calls" className="inline-block text-xs text-primary hover:underline">Open the telecalling queue →</Link>
+            <Link to="/telecalling/calls" className="inline-block text-xs text-primary hover:underline">Open the telecalling call queue →</Link>
           </div>
         )}
       </Drawer>

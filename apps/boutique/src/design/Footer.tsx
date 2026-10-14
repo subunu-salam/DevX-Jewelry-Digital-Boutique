@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { PoweredBy } from "./Brand";
 
 const cols = [
-  { title: "Explore", links: [["Shop all", "/catalog"], ["New arrivals", "/catalog?filter=new"], ["Offers", "/offers"], ["Live gold rate", "/gold-rate"]] },
+  { title: "Explore", links: [["Shop all", "/catalog"], ["New arrivals", "/catalog?filter=new"], ["Offers", "/offers"], ["Live gold rate", "/gold-rate"], ["Gold savings plans", "/gold-savings"]] },
   { title: "Studio", links: [["Visual search", "/ai/visual-search"], ["AI Studio", "/ai"], ["Book a viewing", "/appointments"]] },
   { title: "Client care", links: [["My account", "/account"], ["My collection", "/account"], ["Inquiry bag", "/cart"]] },
 ];

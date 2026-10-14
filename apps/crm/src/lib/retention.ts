@@ -23,6 +23,7 @@ export interface CallTask {
   assignedToId: string | null; assignedTo: string | null; source: string; reason: string; tier: string | null;
   priority: "HIGH" | "MEDIUM" | "LOW"; status: "OPEN" | "DONE"; outcome: string | null; notes: string | null;
   attempts: number; dueAt: string; completedAt: string | null; createdAt: string;
+  segment?: string | null; lostReason?: string | null; feedback?: string | null;
 }
 
 export const TIER_STYLE: Record<Tier, { chip: string; dot: string }> = {
