@@ -95,7 +95,7 @@ export function scoreClient(c: ClientIn, now = new Date()): ClientOut {
 
 /* ───────────── Data sources ───────────── */
 
-async function liveClients(tenantId: string): Promise<ClientIn[]> {
+export async function liveClients(tenantId: string): Promise<ClientIn[]> {
   const [customers, openCalls] = await Promise.all([
     prisma.customer.findMany({
       where: { tenantId },
@@ -133,7 +133,7 @@ export function demoClients(now = new Date()): ClientIn[] {
     // Mix of segments: loyal regulars, drifting regulars, one-timers, VIPs.
     const kind = r();
     const n = kind < 0.12 ? 6 + Math.floor(r() * 5) : kind < 0.45 ? 3 + Math.floor(r() * 3) : kind < 0.75 ? 2 : 1;
-    const gap = kind < 0.12 ? 45 + r() * 50 : 70 + r() * 160;
+    const gap = kind < 0.12 ? 26 + r() * 50 : 60 + r() * 160; // VIPs often buy monthly
     const drift = r() < 0.38 ? 1.4 + r() * 2.2 : 0.2 + r() * 1.0; // ~38% are drifting away
     const lastAgo = Math.round(gap * drift);
     const base = kind < 0.12 ? 22000 + r() * 40000 : kind < 0.45 ? 7000 + r() * 16000 : 2500 + r() * 14000;

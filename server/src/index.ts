@@ -8,6 +8,8 @@ import { salesRouter } from "./routes/sales.js";
 import { adminRouter } from "./routes/admin.js";
 import { aiRouter } from "./routes/ai.js";
 import { retentionRouter } from "./routes/retention.js";
+import { telecallingRouter } from "./routes/telecalling.js";
+import { goldPlansRouter, goldPublicRouter } from "./routes/goldPlans.js";
 import { startGoldWorker } from "./lib/goldIngest.js";
 
 const app = express();
@@ -40,6 +42,7 @@ app.get("/health", (_req, res) =>
 );
 
 // Boutique (public) surface
+app.use("/api/public/gold-plans", goldPublicRouter);
 app.use("/api/public", publicRouter);
 // Auth (both surfaces)
 app.use("/api/auth", authRouter);
@@ -48,6 +51,8 @@ app.use("/api/crm/products", productRouter);
 app.use("/api/crm/sales", salesRouter);
 app.use("/api/crm/admin", adminRouter);
 app.use("/api/crm/retention", retentionRouter);
+app.use("/api/crm/telecalling", telecallingRouter);
+app.use("/api/crm/gold-plans", goldPlansRouter);
 // AI features (visual search, catalog studio, intelligence)
 app.use("/api/ai", aiRouter);
 

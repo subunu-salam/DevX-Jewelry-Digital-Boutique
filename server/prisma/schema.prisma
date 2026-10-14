@@ -97,6 +97,8 @@ model Tenant {
   goldPrices   GoldPriceObservation[]
   auditLogs    AuditLog[]
   callTasks    CallTask[]
+  offerRequests OfferRequest[]
+  goldPlans    GoldPlan[]
 }
 
 model User {
@@ -120,6 +122,8 @@ model User {
   invoices           Invoice[]
   auditLogs          AuditLog[]
   callTasks          CallTask[]    @relation("CallAssignee")
+  offersRequested    OfferRequest[] @relation("OfferRequester")
+  offersDecided      OfferRequest[] @relation("OfferApprover")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -289,6 +293,8 @@ model Customer {
   quotations   Quotation[]
   invoices     Invoice[]
   callTasks    CallTask[]
+  offerRequests OfferRequest[]
+  goldPlans    GoldPlan[]
 
   @@unique([tenantId, phone])
   @@index([tenantId])
@@ -527,6 +533,9 @@ model CallTask {
   status        String    @default("OPEN")   // OPEN | DONE
   outcome       String?   // REACHED | NO_ANSWER | CALLBACK | VISIT_BOOKED | NOT_INTERESTED | WRONG_NUMBER
   notes         String?
+  segment       String?   // ONE_TIME | SECOND_TIME | RECURRING | CONTINUOUS
+  lostReason    String?   // why the client hasn't bought (from the call)
+  feedback      String?   // what the client said / what we could offer
   attempts      Int       @default(0)
   dueAt         DateTime  @default(now())
   completedAt   DateTime?
@@ -536,7 +545,85 @@ model CallTask {
   tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   customer   Customer? @relation(fields: [customerId], references: [id])
   assignedTo User?     @relation("CallAssignee", fields: [assignedToId], references: [id])
+  offers     OfferRequest[]
 
   @@index([tenantId, status])
   @@index([assignedToId])
+}
+
+// An offer a telecaller wants to give a client (e.g. 10% off making). Small ones are
+// auto-approved within policy; the rest wait for a manager.
+model OfferRequest {
+  id            String    @id @default(cuid())
+  tenantId      String
+  reference     String
+  callTaskId    String?
+  customerId    String?
+  customerName  String
+  customerPhone String?
+  type          String    // MAKING_DISCOUNT | PRICE_DISCOUNT | GOLD_RATE_LOCK | FREE_GIFT | BONUS_GOLD
+  value         Float     @default(0) // % for discounts, AED for gift/bonus, days for rate lock
+  reason        String
+  status        String    @default("PENDING") // PENDING | APPROVED | REJECTED | REDEEMED | EXPIRED
+  autoApproved  Boolean   @default(false)
+  requestedById String?
+  decidedById   String?
+  decisionNote  String?
+  decidedAt     DateTime?
+  validUntil    DateTime?
+  code          String?
+  redeemedAt    DateTime?
+  redeemedAmount Float?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  callTask    CallTask? @relation(fields: [callTaskId], references: [id])
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  requestedBy User?     @relation("OfferRequester", fields: [requestedById], references: [id])
+  decidedBy   User?     @relation("OfferApprover", fields: [decidedById], references: [id])
+
+  @@index([tenantId, status])
+}
+
+// Gold savings scheme (Tanishq-style): a monthly instalment plan with a maturity bonus,
+// or a gold accumulation plan where each payment buys grams at the day's rate.
+model GoldPlan {
+  id            String    @id @default(cuid())
+  tenantId      String
+  reference     String
+  customerId    String
+  type          String    // INSTALMENT | ACCUMULATION
+  monthlyAmount Float
+  tenureMonths  Int       @default(11)
+  bonusPct      Float     @default(75) // INSTALMENT: % of one instalment added at maturity
+  karat         Int       @default(22)
+  status        String    @default("ACTIVE") // ACTIVE | MATURED | REDEEMED | CLOSED
+  startDate     DateTime  @default(now())
+  maturityDate  DateTime
+  nominee       String?
+  notes         String?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer          @relation(fields: [customerId], references: [id])
+  payments GoldPlanPayment[]
+
+  @@index([tenantId, status])
+}
+
+model GoldPlanPayment {
+  id         String   @id @default(cuid())
+  planId     String
+  amount     Float
+  goldRate   Float    // AED per gram at the time of payment
+  grams      Float
+  method     String   @default("CASH") // CASH | CARD | TRANSFER | ONLINE
+  paidAt     DateTime @default(now())
+
+  plan GoldPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
 }

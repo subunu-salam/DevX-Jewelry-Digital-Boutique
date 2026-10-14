@@ -3,6 +3,7 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 import { api } from "@/lib/api";
 import { aed } from "@/lib/format";
 import { cn } from "@ui";
+import { Link } from "react-router-dom";
 import type { GoldRate as Rate } from "@/lib/types";
 
 const RANGES = ["1M", "3M", "6M", "1Y"] as const;
@@ -48,6 +49,10 @@ export default function GoldRate() {
       <p className="mt-2 text-sm text-muted-foreground">
         Persisted daily observations · AED per gram · updated {ts ? new Date(ts).toLocaleString() : "—"}
       </p>
+      <Link to="/gold-savings" className="mt-5 flex items-center justify-between gap-4 rounded-2xl bg-night px-5 py-4 text-on-night transition hover:opacity-95">
+        <span><span className="block text-[11px] uppercase tracking-[0.25em] text-brand-soft">New · Gold Savings Plans</span><span className="font-serif text-lg">Lock in today's rate, gram by gram — or save monthly and get a bonus.</span></span>
+        <span className="shrink-0 rounded-full border border-brand-soft/50 px-4 py-2 text-xs">Explore →</span>
+      </Link>
 
       {/* Karat cards */}
       <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">

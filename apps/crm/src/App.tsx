@@ -7,7 +7,11 @@ import Catalog from "./pages/Catalog";
 import Inquiries from "./pages/Inquiries";
 import Appointments from "./pages/Appointments";
 import Retention from "./pages/Retention";
-import Calls from "./pages/Calls";
+import Calls from "./pages/telecalling/Calls";
+import Recurring from "./pages/telecalling/Recurring";
+import Approvals from "./pages/telecalling/Approvals";
+import Performance from "./pages/telecalling/Performance";
+import GoldPlans from "./pages/GoldPlans";
 import Marketing from "./pages/Marketing";
 import Customers from "./pages/Customers";
 import Quotes from "./pages/Quotes";
@@ -48,7 +52,13 @@ export default function App() {
       <Route path="/team" element={<Protected><Team /></Protected>} />
       <Route path="/insights" element={<Protected><Insights /></Protected>} />
       <Route path="/retention" element={<Protected><Retention /></Protected>} />
-      <Route path="/calls" element={<Protected><Calls /></Protected>} />
+      <Route path="/calls" element={<Navigate to="/telecalling/calls" replace />} />
+      <Route path="/telecalling" element={<Navigate to="/telecalling/recurring" replace />} />
+      <Route path="/telecalling/recurring" element={<Protected><Recurring /></Protected>} />
+      <Route path="/telecalling/calls" element={<Protected><Calls /></Protected>} />
+      <Route path="/telecalling/approvals" element={<Protected><Approvals /></Protected>} />
+      <Route path="/telecalling/performance" element={<Protected><Performance /></Protected>} />
+      <Route path="/gold-plans" element={<Protected><GoldPlans /></Protected>} />
       <Route path="/marketing" element={<Protected><Marketing /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
