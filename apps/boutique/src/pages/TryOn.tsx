@@ -12,6 +12,8 @@ import { useStore } from "@/context/store";
 import { EASE, JewelImage, LuxuryButton, Modal, Price, t, useToast } from "@/design";
 import { LABEL, TIPS, defaults, detect, needs, place, preload, smoother, swing, type FitSpec, type Placement, type TryOnType } from "@/lib/tryon/engine";
 import { assetFor, toJpeg, type Asset } from "@/lib/tryon/asset";
+import { specFromProduct } from "@/lib/jewel3d/spec";
+import type { RingAR } from "@/lib/jewel3d/ar";
 
 const DISCLAIMER = "Virtual try-on is a visualization only. Size, fit, colour and sparkle may differ from the actual piece.";
 
@@ -98,6 +100,14 @@ function Studio({ slug }: { slug: string }) {
   const [compare, setCompare] = useState(false);
   /** Scene brightness (live camera) so the metal isn't glowing in a dim room. */
   const [light, setLight] = useState(1);
+  /** 3D AR for rings & bangles (real 3D model on the finger/wrist, with finger occlusion). */
+  const spec3d = useMemo(() => (product ? specFromProduct(product) : null), [product]);
+  const [use3d, setUse3d] = useState(true);
+  const can3d = !!spec3d && (spec3d.kind === "ring" || spec3d.kind === "bangle") && (product?.tryOn?.type === "ring" || product?.tryOn?.type === "bracelet");
+  const show3d = can3d && use3d && (phase === "live" || phase === "photo");
+  const show3dRef = useRef(show3d); show3dRef.current = show3d;
+  const arCanvas = useRef<HTMLCanvasElement>(null);
+  const arRef = useRef<RingAR | null>(null);
 
   const [consentOpen, setConsentOpen] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
@@ -136,6 +146,28 @@ function Studio({ slug }: { slug: string }) {
   /* ── Photo: detect once, re-place whenever the piece changes ── */
   const imgRef = useRef<HTMLImageElement>(null);
   const lmsRef = useRef<{ kind: string; pts: { x: number; y: number }[] | null; W: number; H: number } | null>(null);
+
+  /* 3D AR renderer — created when a ring/bangle is shown in 3D, disposed when leaving */
+  const spec3dKey = spec3d ? JSON.stringify(spec3d) : "";
+  useEffect(() => {
+    if (!show3d || !spec3d) return;
+    let alive = true;
+    import("@/lib/jewel3d/ar").then(({ createRingAR }) => {
+      if (!alive || !arCanvas.current) return;
+      try {
+        arRef.current = createRingAR(arCanvas.current, spec3d);
+        const l = lmsRef.current;
+        if (phase === "photo" && l?.pts) arRef.current.update(l.pts, l.W, l.H);
+      } catch { setUse3d(false); }
+    }).catch(() => setUse3d(false));
+    return () => { alive = false; arRef.current?.dispose(); arRef.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show3d, spec3dKey, phase]);
+  /* photo: re-place the 3D ring whenever detection updates */
+  useEffect(() => {
+    const l = lmsRef.current;
+    if (show3d && phase === "photo" && arRef.current && l) arRef.current.update(l.pts, l.W, l.H);
+  }, [auto, show3d, phase]);
 
   const detectPhoto = useCallback(async () => {
     const img = imgRef.current, t = typeRef.current, f = fitRef.current;
@@ -246,6 +278,7 @@ function Studio({ slug }: { slug: string }) {
         }
         try {
           const pts = await detect(t, v, "VIDEO", performance.now());
+          if (show3dRef.current && arRef.current && !stopped) arRef.current.update(pts, v.videoWidth, v.videoHeight);
           if (pts && !stopped) {
             const key = `${t}:${f.anchor}:${f.k}:${f.aspect}:${f.widthMm ?? ""}`;
             if (key !== smoothKey) { smooth = smoother(); sway = []; smoothKey = key; }
@@ -321,7 +354,17 @@ function Studio({ slug }: { slug: string }) {
 
   /* ── Compose a shareable image (photo + piece + visualization watermark) ── */
   async function compose(): Promise<string | null> {
-    if (!photo || !auto || !asset || asset === "loading") return null;
+    if (!photo) return null;
+    if (show3d && arRef.current) {
+      const load3 = (src: string) => new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+      const [base, ov] = await Promise.all([load3(photo.url), load3(arRef.current.snapshot())]);
+      const c = document.createElement("canvas"); c.width = base.naturalWidth; c.height = base.naturalHeight;
+      const ctx = c.getContext("2d")!;
+      ctx.drawImage(base, 0, 0); ctx.drawImage(ov, 0, 0, c.width, c.height);
+      watermark(ctx, c.width, c.height);
+      return c.toDataURL("image/jpeg", 0.92);
+    }
+    if (!auto || !asset || asset === "loading") return null;
     if (!asset.exportable) { toast({ title: "Saving isn't available for this piece", body: "Take a screenshot instead." }); return null; }
     const load = (src: string) => new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); if (!src.startsWith("data:")) i.crossOrigin = "anonymous"; i.onload = () => res(i); i.onerror = rej; i.src = src; });
     const base = await load(photo.url);
@@ -478,7 +521,7 @@ function Studio({ slug }: { slug: string }) {
                   <img ref={imgRef} src={photo.url} alt="Your photo" draggable={false} onLoad={() => { lmsRef.current = null; detectPhoto(); }} className="absolute inset-0 size-full" />
                 )}
                 <AnimatePresence>
-                  {ready && auto && !compare && asset && auto.items.map((p, i) => {
+                  {ready && auto && !compare && asset && !show3d && auto.items.map((p, i) => {
                     const src = asset.halves?.[i] ?? asset.src;
                     const lit = phase === "live" ? light : 1;
                     return (
@@ -508,8 +551,14 @@ function Studio({ slug }: { slug: string }) {
                     );
                   })}
                 </AnimatePresence>
+                {show3d && !compare && <canvas ref={arCanvas} className="pointer-events-none absolute inset-0 size-full" />}
               </div>
 
+              {can3d && (
+                <button onClick={() => setUse3d((v) => !v)} className="absolute right-3 top-12 z-10 rounded-full bg-black/55 px-2.5 py-1 text-[10.5px] font-semibold text-white backdrop-blur">
+                  {use3d ? "3D ring ✓" : "Switch to 3D"}
+                </button>
+              )}
               <span className="absolute left-3 top-3 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white backdrop-blur">Visualization only</span>
               {asset === "loading" ? (
                 <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-surface/95 px-2.5 py-1 text-[10.5px] font-semibold"><Loader2 className="size-3 animate-spin text-brand-deep" /> Preparing piece…</span>

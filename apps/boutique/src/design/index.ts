@@ -28,3 +28,4 @@ export type { ShowcaseItem } from "./Showcase";
 export { flyToCart, CART_BUMP_EVENT } from "./FlyToCart";
 export { Footer } from "./Footer";
 export { ParticleField } from "./ParticleField";
+export { Jewel3DViewer } from "./Jewel3DViewer";
