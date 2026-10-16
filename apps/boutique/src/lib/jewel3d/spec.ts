@@ -15,7 +15,7 @@ export const isWrist = (k: JewelKind) => k === "bangle" || k === "tennis" || k =
 export type Metal = "yellow" | "white" | "rose";
 export type GemKey = "diamond" | "ruby" | "sapphire" | "emerald" | "morganite" | "amethyst" | "citrine" | "aquamarine" | "pearl";
 export type Shape = "round" | "oval" | "cushion" | "emerald" | "pear";
-export type Style = "solitaire" | "halo" | "pave" | "halo-pave" | "plain";
+export type Style = "solitaire" | "halo" | "pave" | "halo-pave" | "trilogy" | "plain";
 
 export interface JewelSpec {
   kind: JewelKind;
@@ -25,6 +25,8 @@ export interface JewelSpec {
   style: Style;
   /** centre stone width in mm */
   stoneMm: number;
+  /** special motifs: jhumka bell, evil-eye enamel */
+  motif?: "jhumka" | "evil-eye" | null;
 }
 
 export const GEMS: Record<GemKey, { label: string; color: string; ior: number; dispersion: number; atten: number }> = {
@@ -54,10 +56,14 @@ export function specFromProduct(p: ProductLike): JewelSpec | null {
   const words = `${p.name} ${(p.tags ?? []).join(" ")} ${cat} ${p.stoneType ?? ""}`.toLowerCase();
   const has = (...k: string[]) => k.some((w) => words.includes(w));
   const t = p.tryOn?.type ?? "";
-  const isRing = t === "ring" || (!t && has("ring", "band", "solitaire"));
-  const isEar = t === "earrings" || (!t && has("earring", "stud", "hoop", "jhumka"));
-  const isNeckP = t === "pendant" || t === "necklace" || (!t && has("pendant", "necklace", "choker", "riviere", "rivière", "strand", "chain"));
-  const isWristP = t === "bracelet" || (!t && has("bangle", "bracelet", "cuff", "kada"));
+  // category decides first ("earrings" contains "ring"), then try-on type, then name/tag words
+  const c = cat.toLowerCase();
+  const byCat = c.startsWith("earring") ? "ear" : c.startsWith("ring") ? "ring" : /pendant|necklace|chain/.test(c) ? "neck" : /bracelet|bangle/.test(c) ? "wrist" : "";
+  const nameHas = (...k: string[]) => k.some((w) => new RegExp(`\\b${w}`).test(words.replace(/earrings?/g, "")));
+  const by = byCat || (t === "ring" ? "ring" : t === "earrings" ? "ear" : t === "pendant" || t === "necklace" ? "neck" : t === "bracelet" ? "wrist" : "")
+    || (has("earring", "stud", "hoop", "jhumka") ? "ear" : has("pendant", "necklace", "choker", "riviere", "rivière", "strand", "chain") ? "neck"
+      : has("bangle", "bracelet", "cuff", "kada") ? "wrist" : nameHas("ring", "band") ? "ring" : "");
+  const isRing = by === "ring", isEar = by === "ear", isNeckP = by === "neck", isWristP = by === "wrist";
   const kind: JewelKind | null =
     isRing ? "ring"
       : isEar ? (has("hoop", "huggie") ? "hoop" : has("drop", "dangle", "chandelier", "jhumka") ? "drop" : "stud")
@@ -68,14 +74,19 @@ export function specFromProduct(p: ProductLike): JewelSpec | null {
   if (!kind) return null;
   const mc = (p.metalColor ?? "").toLowerCase();
   const metal: Metal = mc.includes("rose") ? "rose" : mc.includes("white") || mc.includes("platinum") || mc.includes("silver") ? "white" : "yellow";
-  const gem: GemKey | null =
-    has("pearl") ? "pearl" : has("ruby") ? "ruby" : has("sapphire") ? "sapphire" : has("emerald") ? "emerald"
-      : has("morganite", "pink") ? "morganite" : has("amethyst") ? "amethyst" : has("citrine") ? "citrine" : has("aquamarine")
-        ? "aquamarine" : has("diamond", "solitaire", "brilliant", "halo", "riviere", "rivière", "tennis") ? "diamond"
-          : kind === "bangle" || kind === "chain" || kind === "linkBracelet" || kind === "hoop" || kind === "choker" ? null : "diamond";
+  const st = (p.stoneType ?? "").toLowerCase();
+  const gemWords = words.replace(/emerald[- ]cut/g, "");
+  const gemIn = (txt: string): GemKey | null =>
+    txt.includes("pearl") ? "pearl" : txt.includes("ruby") ? "ruby" : txt.includes("sapphire") ? "sapphire" : txt.includes("emerald") ? "emerald"
+      : txt.includes("morganite") || txt.includes("pink") ? "morganite" : txt.includes("amethyst") ? "amethyst" : txt.includes("citrine") ? "citrine"
+        : txt.includes("aquamarine") ? "aquamarine" : txt.includes("diamond") || txt.includes("solitaire") || txt.includes("brilliant") || txt.includes("riviere") || txt.includes("rivière") || txt.includes("tennis") ? "diamond" : null;
+  const motif = has("evil-eye", "evil eye") ? "evil-eye" as const : has("jhumka") ? "jhumka" as const : null;
+  const plainMetal = st === "" && (has("22k", "band", "plain", "filigree", "cuff", "heritage") || ["bangle", "chain", "linkBracelet", "hoop", "choker"].includes(kind));
+  const gem: GemKey | null = motif ? null : gemIn(st) ?? gemIn(gemWords) ?? (plainMetal ? null : kind === "ring" || kind === "stud" || kind === "drop" || kind === "pendant" || kind === "riviere" || kind === "tennis" ? "diamond" : null);
   const shape: Shape = has("oval") ? "oval" : has("cushion") ? "cushion" : has("emerald cut", "emerald-cut", "baguette") ? "emerald" : has("pear", "drop") ? "pear" : "round";
   const halo = has("halo"), pave = has("pave", "pavé", "eternity", "tennis");
-  const style: Style = gem === null ? "plain" : halo && pave ? "halo-pave" : halo ? "halo" : pave ? "pave" : kind === "pendant" ? "halo" : "solitaire";
+  const style: Style = gem === null ? "plain" : has("trilogy", "three stone", "three-stone") ? "trilogy" : halo && pave ? "halo-pave" : halo ? "halo" : pave ? "pave"
+    : kind === "pendant" && !has("solitaire") ? "halo" : "solitaire";
   const stoneMm = kind === "ring" ? (has("cocktail") ? 9 : 6.5) : kind === "stud" ? 5.5 : kind === "drop" ? 7 : kind === "pendant" ? 8 : kind === "pearlStrand" ? 7 : 3;
-  return { kind, metal, gem, shape, style, stoneMm };
+  return { kind, metal, gem, shape, style, stoneMm: has("0.5ct", "0.5 ct") ? 5.2 : stoneMm, motif };
 }
