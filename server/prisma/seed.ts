@@ -74,12 +74,29 @@ async function refreshCatalogueImages() {
     await prisma.offer.updateMany({ where: { code, image: { contains: STOCK } }, data: { image: SHOT(sku) } });
 }
 
+/** Try-on cut-outs made before the photo swap were cut from the old stock photos (wrong piece).
+ *  Remove those on the demo pieces so 2D try-on uses the new matching photo; cut-outs staff
+ *  make from now on are kept. */
+const PHOTO_SWAP = new Date("2026-10-16T12:00:00Z");
+async function clearStaleCutouts() {
+  const stale = await prisma.tryOnAsset.findMany({
+    where: { updatedAt: { lt: PHOTO_SWAP }, product: { sku: { in: [...CATALOGUE_SKUS] } } },
+    select: { productId: true, product: { select: { sku: true } } },
+  });
+  for (const a of stale) {
+    await prisma.tryOnAsset.delete({ where: { productId: a.productId } });
+    await prisma.productMedia.updateMany({ where: { productId: a.productId, kind: { startsWith: "tryon" }, url: { startsWith: "/api/public/tryon-assets/" } }, data: { url: "auto" } });
+    console.log(`✓ Old try-on cut-out cleared for ${a.product.sku}`);
+  }
+}
+
 async function main() {
   // The build runs this on every deploy — never wipe a live database unless explicitly asked.
   if (process.env.SEED_RESET !== "1" && (await prisma.tenant.count()) > 0) {
     console.log("✓ Database already seeded — keeping existing data (set SEED_RESET=1 to reset).");
     await attachSampleModels();
     await refreshCatalogueImages();
+    await clearStaleCutouts();
     return;
   }
   console.log("⟳ Resetting database…");
