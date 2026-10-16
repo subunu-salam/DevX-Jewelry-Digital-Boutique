@@ -13,7 +13,7 @@ import { EASE, JewelImage, LuxuryButton, Modal, Price, t, useToast } from "@/des
 import { LABEL, TIPS, defaults, detect, needs, place, preload, smoother, swing, type FitSpec, type Placement, type TryOnType } from "@/lib/tryon/engine";
 import { assetFor, toJpeg, type Asset } from "@/lib/tryon/asset";
 import { specFromProduct } from "@/lib/jewel3d/spec";
-import type { RingAR } from "@/lib/jewel3d/ar";
+import type { JewelAR } from "@/lib/jewel3d/ar";
 
 const DISCLAIMER = "Virtual try-on is a visualization only. Size, fit, colour and sparkle may differ from the actual piece.";
 
@@ -100,14 +100,14 @@ function Studio({ slug }: { slug: string }) {
   const [compare, setCompare] = useState(false);
   /** Scene brightness (live camera) so the metal isn't glowing in a dim room. */
   const [light, setLight] = useState(1);
-  /** 3D AR for rings & bangles (real 3D model on the finger/wrist, with finger occlusion). */
+  /** 3D AR for every piece: rings/bracelets on the hand, earrings on the lobes, necklaces at the neck. */
   const spec3d = useMemo(() => (product ? specFromProduct(product) : null), [product]);
   const [use3d, setUse3d] = useState(true);
-  const can3d = !!spec3d && (spec3d.kind === "ring" || spec3d.kind === "bangle") && (product?.tryOn?.type === "ring" || product?.tryOn?.type === "bracelet");
+  const can3d = !!spec3d && !!product?.tryOn;
   const show3d = can3d && use3d && (phase === "live" || phase === "photo");
   const show3dRef = useRef(show3d); show3dRef.current = show3d;
   const arCanvas = useRef<HTMLCanvasElement>(null);
-  const arRef = useRef<RingAR | null>(null);
+  const arRef = useRef<JewelAR | null>(null);
 
   const [consentOpen, setConsentOpen] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
@@ -152,10 +152,10 @@ function Studio({ slug }: { slug: string }) {
   useEffect(() => {
     if (!show3d || !spec3d) return;
     let alive = true;
-    import("@/lib/jewel3d/ar").then(({ createRingAR }) => {
+    import("@/lib/jewel3d/ar").then(({ createJewelAR }) => {
       if (!alive || !arCanvas.current) return;
       try {
-        arRef.current = createRingAR(arCanvas.current, spec3d);
+        arRef.current = createJewelAR(arCanvas.current, spec3d);
         const l = lmsRef.current;
         if (phase === "photo" && l?.pts) arRef.current.update(l.pts, l.W, l.H);
       } catch { setUse3d(false); }
@@ -556,7 +556,7 @@ function Studio({ slug }: { slug: string }) {
 
               {can3d && (
                 <button onClick={() => setUse3d((v) => !v)} className="absolute right-3 top-12 z-10 rounded-full bg-black/55 px-2.5 py-1 text-[10.5px] font-semibold text-white backdrop-blur">
-                  {use3d ? "3D ring ✓" : "Switch to 3D"}
+                  {use3d ? "3D ✓ · tap for 2D" : "Switch to 3D"}
                 </button>
               )}
               <span className="absolute left-3 top-3 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white backdrop-blur">Visualization only</span>
