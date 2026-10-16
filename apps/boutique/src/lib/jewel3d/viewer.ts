@@ -17,13 +17,13 @@ export interface Viewer {
   dispose(): void;
 }
 
-export function createViewer(canvas: HTMLCanvasElement, spec: JewelSpec, opts: { background?: string } = {}): Viewer {
+export function createViewer(canvas: HTMLCanvasElement, spec: JewelSpec, opts: { background?: string; jewel?: Jewel } = {}): Viewer {
   const renderer = makeRenderer(canvas);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(opts.background ?? "#f6f4f1");
   scene.environment = studioEnvironment(renderer);
 
-  const jewel: Jewel = buildJewel(spec);
+  const jewel: Jewel = opts.jewel ?? buildJewel(spec);
   showcasePose(jewel, spec.kind);
   const holder = new THREE.Group();
   holder.add(jewel.group);

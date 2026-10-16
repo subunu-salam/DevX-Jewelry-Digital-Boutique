@@ -31,6 +31,8 @@ export interface Product {
     type: "necklace" | "pendant" | "earrings" | "ring" | "bracelet"; assetUrl: string | null;
     anchor?: { x: number; y: number } | null; widthMm?: number | null; pair?: boolean; splitX?: number | null;
   } | null;
+  /** Uploaded 3D model (.glb) URL, when staff added one in the CRM. */
+  model3d?: string | null;
   // full detail
   description?: string;
   stoneType?: string | null;

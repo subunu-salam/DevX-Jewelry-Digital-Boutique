@@ -39,7 +39,7 @@ class Pose {
   apply(o: THREE.Object3D) { o.position.copy(this.pos); o.quaternion.copy(this.quat); o.scale.setScalar(this.scale); }
 }
 
-export function createJewelAR(canvas: HTMLCanvasElement, spec: JewelSpec): JewelAR {
+export function createJewelAR(canvas: HTMLCanvasElement, spec: JewelSpec, model?: Jewel | null): JewelAR {
   const renderer = makeRenderer(canvas, true);
   const scene = new THREE.Scene();
   scene.environment = studioEnvironment(renderer);
@@ -52,7 +52,7 @@ export function createJewelAR(canvas: HTMLCanvasElement, spec: JewelSpec): Jewel
   const jewels: Jewel[] = [];
   const count = ear ? 2 : 1;
   for (let i = 0; i < count; i++) {
-    const j = buildJewel(spec, { wearable: true });
+    const j: Jewel = model ? { ...model, group: i === 0 ? model.group : model.group.clone() } : buildJewel(spec, { wearable: true });
     const h = new THREE.Group();
     h.add(j.group);
     if (!ear && !neck) {

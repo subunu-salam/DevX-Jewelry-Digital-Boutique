@@ -69,4 +69,6 @@ export function resolveTryOn(p: { media: { kind: string; url: string }[]; catego
 }
 
 /** Media rows that are real gallery images (exclude try-on settings rows). */
-export const isGalleryMedia = (m: { kind: string }) => !m.kind.startsWith("tryon");
+export const isGalleryMedia = (m: { kind: string }) => !m.kind.startsWith("tryon") && m.kind !== "model3d";
+/** URL of the product's uploaded 3D model (with ?piece=&mm=), or null. */
+export const model3dUrl = (media: { kind: string; url: string }[]) => media.find((m) => m.kind === "model3d")?.url ?? null;

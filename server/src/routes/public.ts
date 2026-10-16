@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { isGalleryMedia, resolveTryOn } from "../lib/tryon.js";
+import { isGalleryMedia, model3dUrl, resolveTryOn } from "../lib/tryon.js";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { optionalAuth } from "../middleware/auth.js";
@@ -281,6 +281,17 @@ publicRouter.get("/tryon-assets/:productId", async (req, res) => {
   res.send(Buffer.from(a.png));
 });
 
+/* ── Uploaded 3D models (.glb) ── */
+publicRouter.get("/models/:productId", async (req, res) => {
+  const a = await prisma.model3DAsset.findUnique({ where: { productId: req.params.productId } });
+  if (!a) return res.status(404).json({ error: "Not found" });
+  res.setHeader("Content-Type", "model/gltf-binary");
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  res.setHeader("Content-Disposition", `inline; filename="${a.fileName.replace(/[^\w.-]/g, "_")}"`);
+  res.send(Buffer.from(a.glb));
+});
+
 /* ── Public quote view via share token ── */
 publicRouter.get("/quotes/shared/:token", async (req, res) => {
   const quote = await prisma.quotation.findUnique({
@@ -340,6 +351,7 @@ function serializeProduct(p: any, full = false) {
     stoneType: p.stoneType,
     availability,
     tryOn: resolveTryOn(p),
+    model3d: model3dUrl(p.media ?? []),
   };
   if (!full) return base;
   return {

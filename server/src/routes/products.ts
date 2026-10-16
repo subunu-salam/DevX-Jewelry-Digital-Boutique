@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { TRYON_TYPES, assetUrlFor, isGalleryMedia, resolveTryOn, typeFromCategory } from "../lib/tryon.js";
+import { TRYON_TYPES, assetUrlFor, isGalleryMedia, model3dUrl, resolveTryOn, typeFromCategory } from "../lib/tryon.js";
+import express from "express";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { requireStaff, requireRole } from "../middleware/auth.js";
@@ -41,6 +42,7 @@ productRouter.get("/", async (req, res) => {
       collection: pr.collection?.name ?? null,
       image: (pr.media.filter(isGalleryMedia).find((m) => m.isPrimary) ?? pr.media.filter(isGalleryMedia)[0])?.url ?? null,
       tryOn: tryOnSettings(pr),
+      model3d: model3dUrl(pr.media),
       featured: pr.featured,
       isNew: pr.isNew,
       active: pr.active,
@@ -158,7 +160,7 @@ productRouter.get("/:id", async (req, res) => {
     include: { media: { orderBy: { sort: "asc" } }, inventory: true },
   });
   if (!product) return res.status(404).json({ error: "Not found" });
-  res.json({ ...product, images: product.media.filter(isGalleryMedia).map((m) => m.url), tryOn: tryOnSettings({ ...product, category: null }) });
+  res.json({ ...product, images: product.media.filter(isGalleryMedia).map((m) => m.url), tryOn: tryOnSettings({ ...product, category: null }), model3d: model3dUrl(product.media) });
 });
 
 /* Update */
@@ -292,5 +294,45 @@ productRouter.delete("/:id/tryon-asset", editors, async (req, res) => {
   await prisma.tryOnAsset.deleteMany({ where: { productId: product.id } });
   const row = product.media.find((m) => m.kind.startsWith("tryon") && m.url.startsWith("/api/public/tryon-assets/"));
   if (row) await prisma.productMedia.update({ where: { id: row.id }, data: { url: "auto" } });
+  res.json({ ok: true });
+});
+
+
+/* ── 3D model (.glb) for "View in 3D" and 3D try-on ──
+ * Body: the raw .glb file. Query: fileName, piece (which piece of a multi-piece file),
+ * mm (ring inner diameter / piece size in mm). */
+productRouter.put("/:id/model3d", editors, express.raw({ type: () => true, limit: "40mb" }), async (req, res) => {
+  const p = req.principal!;
+  const q = z.object({
+    fileName: z.string().max(200).default("model.glb"),
+    piece: z.coerce.number().int().min(0).max(20).default(0),
+    mm: z.coerce.number().min(2).max(600).optional(),
+  }).safeParse(req.query);
+  if (!q.success) return res.status(400).json({ error: "Invalid model settings" });
+  const glb = req.body as Buffer;
+  if (!Buffer.isBuffer(glb) || glb.length < 20 || glb.subarray(0, 4).toString("latin1") !== "glTF")
+    return res.status(400).json({ error: "Please upload a binary glTF (.glb) file" });
+  const product = await prisma.product.findFirst({ where: { id: req.params.id, tenantId: p.tenantId } });
+  if (!product) return res.status(404).json({ error: "Product not found" });
+  const saved = await prisma.model3DAsset.upsert({
+    where: { productId: product.id },
+    create: { productId: product.id, glb, fileName: q.data.fileName },
+    update: { glb, fileName: q.data.fileName },
+  });
+  const sp = new URLSearchParams({ v: String(saved.updatedAt.getTime()), piece: String(q.data.piece) });
+  if (q.data.mm) sp.set("mm", String(q.data.mm));
+  const url = `/api/public/models/${product.id}?${sp.toString()}`;
+  await prisma.productMedia.deleteMany({ where: { productId: product.id, kind: "model3d" } });
+  await prisma.productMedia.create({ data: { productId: product.id, kind: "model3d", url, isPrimary: false, sort: 998 } });
+  await audit({ tenantId: p.tenantId, userId: p.sub, action: "product.model3d", entity: "Product", entityId: product.id, meta: { bytes: glb.length, fileName: q.data.fileName } });
+  res.json({ model3d: url });
+});
+
+productRouter.delete("/:id/model3d", editors, async (req, res) => {
+  const p = req.principal!;
+  const product = await prisma.product.findFirst({ where: { id: req.params.id, tenantId: p.tenantId } });
+  if (!product) return res.status(404).json({ error: "Product not found" });
+  await prisma.model3DAsset.deleteMany({ where: { productId: product.id } });
+  await prisma.productMedia.deleteMany({ where: { productId: product.id, kind: "model3d" } });
   res.json({ ok: true });
 });

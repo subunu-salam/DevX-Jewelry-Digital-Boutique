@@ -1,5 +1,7 @@
 import { PrismaClient, Role, PriceMode } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { readFileSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const prisma = new PrismaClient();
 
@@ -24,10 +26,29 @@ const PHOTOS = {
   hero: IMG("photo-1617038220319-276d3cfab638"),
 };
 
+/** Real CAD models shipped with the demo catalogue: [SKU, file, piece in file, ring inner Ø mm].
+ *  Added on every deploy if the product exists and has no 3D model yet (never overwrites staff uploads). */
+const SAMPLE_MODELS: [string, string, number, number][] = [["AR-2201", "solitaire-rings.glb", 0, 17.3]];
+async function attachSampleModels() {
+  for (const [sku, file, piece, mm] of SAMPLE_MODELS) {
+    const path = fileURLToPath(new URL(`./models/${file}`, import.meta.url));
+    if (!existsSync(path)) continue;
+    const products = await prisma.product.findMany({ where: { sku, model3d: { is: null } } });
+    for (const product of products) {
+      const saved = await prisma.model3DAsset.create({ data: { productId: product.id, glb: readFileSync(path), fileName: file } });
+      const url = `/api/public/models/${product.id}?v=${saved.updatedAt.getTime()}&piece=${piece}&mm=${mm}`;
+      await prisma.productMedia.deleteMany({ where: { productId: product.id, kind: "model3d" } });
+      await prisma.productMedia.create({ data: { productId: product.id, kind: "model3d", url, isPrimary: false, sort: 998 } });
+      console.log(`✓ 3D model attached to ${sku}`);
+    }
+  }
+}
+
 async function main() {
   // The build runs this on every deploy — never wipe a live database unless explicitly asked.
   if (process.env.SEED_RESET !== "1" && (await prisma.tenant.count()) > 0) {
     console.log("✓ Database already seeded — keeping existing data (set SEED_RESET=1 to reset).");
+    await attachSampleModels();
     return;
   }
   console.log("⟳ Resetting database…");
@@ -259,6 +280,7 @@ async function main() {
   staff.forEach((s) => console.log(`   ${s.role.padEnd(15)} ${s.email}  /  Password123!`));
   console.log("\n── Boutique customer login (https://<boutique-url>) ──");
   console.log("   Phone +971501112233  /  Customer123!\n");
+  await attachSampleModels();
 }
 
 main()
