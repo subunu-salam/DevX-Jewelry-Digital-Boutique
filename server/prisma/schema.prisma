@@ -237,6 +237,7 @@ model Product {
   media      ProductMedia[]
   inventory  Inventory[]
   tryOnAsset TryOnAsset?
+  model3d    Model3DAsset?
 
   @@unique([tenantId, sku])
   @@index([tenantId])
@@ -637,6 +638,18 @@ model TryOnAsset {
   png       Bytes
   width     Int
   height    Int
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+// Real 3D model (.glb) uploaded in the CRM for "View in 3D" and 3D try-on. Served by
+// /api/public/models/:productId; which piece of the file and the ring size ride on the
+// product's "model3d" media row URL.
+model Model3DAsset {
+  productId String   @id
+  glb       Bytes
+  fileName  String
   updatedAt DateTime @updatedAt
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)

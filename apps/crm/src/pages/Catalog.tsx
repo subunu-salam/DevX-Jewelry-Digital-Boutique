@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Plus, Package, Star, Sparkles, Wand2 } from "lucide-react";
+import { Box, Plus, Package, Star, Sparkles, Wand2 } from "lucide-react";
+import Model3DUpload from "@/components/Model3DUpload";
 import TryOnStudio from "@/components/TryOnStudio";
 import { TYPE_DEFAULTS, autoMask, exportCut, loadImage, toWorking, type TryOnType } from "@/lib/cutout";
 import { api } from "@/lib/api";
@@ -12,6 +13,7 @@ interface ProductRow {
   image: string | null; featured: boolean; isNew: boolean; active: boolean; totalStock: number;
   inventory: { branchId: string; branchName: string; quantity: number }[];
   tryOn?: TryOnSettings;
+  model3d?: string | null;
 }
 interface TryOnSettings { enabled: boolean; type: string; assetUrl: string | null; effectiveType: string | null; categoryType: string | null }
 interface Ref { id: string; name: string }
@@ -24,6 +26,7 @@ export default function Catalog() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tryOnFor, setTryOnFor] = useState<ProductRow | null>(null);
+  const [modelFor, setModelFor] = useState<ProductRow | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -97,6 +100,10 @@ export default function Catalog() {
                       <Sparkles className={r.tryOn?.enabled ? "size-3.5 text-primary" : "size-3.5 text-muted-foreground"} />
                       {r.tryOn?.enabled ? <span className="capitalize">{r.tryOn.effectiveType}{r.tryOn.assetUrl?.startsWith("/api/public/tryon-assets/") ? " · studio cut-out ✓" : r.tryOn.assetUrl ? " · cut-out" : " · needs cut-out"}</span> : <span className="text-muted-foreground">Off</span>}
                     </button>
+                    <button onClick={() => setModelFor(r)} className="ml-1.5 inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs hover:bg-muted" title="3D model (.glb)">
+                      <Box className={r.model3d ? "size-3.5 text-primary" : "size-3.5 text-muted-foreground"} />
+                      {r.model3d ? "3D ✓" : <span className="text-muted-foreground">3D</span>}
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -109,6 +116,7 @@ export default function Catalog() {
       </Card>
 
       <TryOnStudio product={tryOnFor} onClose={() => setTryOnFor(null)} onSaved={(m) => { setTryOnFor(null); setNotice(m); load(); }} />
+      <Model3DUpload product={modelFor} onClose={() => setModelFor(null)} onSaved={(m) => { setModelFor(null); setNotice(m); load(); }} />
       <BulkPrepare open={bulkOpen} rows={rows} onClose={() => { setBulkOpen(false); load(); }} />
 
       <ProductModal

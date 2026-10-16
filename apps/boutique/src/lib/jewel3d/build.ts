@@ -172,6 +172,17 @@ export function buildJewel(spec: JewelSpec, opts: { wearable?: boolean } = {}): 
   /** Centre stone (or pearl) + its setting, table facing +Y, girdle at y=0. */
   const head = (withHalo: boolean) => {
     const h = new THREE.Group();
+    if (spec.motif === "evil-eye") {
+      // enamel eye in a gold bezel (table up = +Y)
+      const disc = (r: number, y: number, color: string, ry = 0.18) => {
+        const m = new THREE.Mesh(new THREE.SphereGeometry(r, 48, 16), new THREE.MeshPhysicalMaterial({ color, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 1.4 }));
+        m.scale.set(1, ry, 1); m.position.y = y; return m;
+      };
+      h.add(disc(W * 0.5, 0, "#1d3f9e"), disc(W * 0.36, 0.25, "#f4f6fb"), disc(W * 0.24, 0.45, "#3d8ee8"), disc(W * 0.12, 0.62, "#0c0d12"));
+      const bez = new THREE.Mesh(new THREE.TorusGeometry(W * 0.52, 0.55, 14, 64), metal);
+      bez.rotation.x = Math.PI / 2; h.add(bez);
+      return h;
+    }
     if (spec.gem === "pearl") {
       centre = new THREE.Mesh(new THREE.SphereGeometry(W / 2, 48, 32), gemMaterial("pearl"));
       centre.position.y = W * 0.12; h.add(centre);
@@ -230,6 +241,24 @@ export function buildJewel(spec: JewelSpec, opts: { wearable?: boolean } = {}): 
       h.rotation.x = Math.PI / 2;                 // table faces +Z (up from the finger)
       h.position.z = outerR + W * 0.44;
       group.add(h);
+      if (spec.style === "trilogy") {
+        // two side stones, 60% of the centre, each in its own 4-prong basket
+        for (const sgn of [-1, 1]) {
+          const sw = W * 0.6;
+          const side = new THREE.Group();
+          const st = new THREE.Mesh(stoneGeometry(sw, spec.shape, 16), gemMaterial(spec.gem));
+          side.add(st); accents.push(st);
+          for (let i = 0; i < 4; i++) {
+            const a = ((i + 0.5) / 4) * Math.PI * 2, [x, z] = outline(spec.shape, a);
+            side.add(rod(new THREE.Vector3(x * sw * 0.3, -sw * 0.46, z * sw * 0.3), new THREE.Vector3(x * sw * 0.5, sw * 0.1, z * sw * 0.5), sw * 0.06, metal));
+          }
+          side.rotation.x = Math.PI / 2;
+          const ang = sgn * (W * 0.5 + sw * 0.55) / (outerR + W * 0.3);
+          side.position.set(Math.sin(ang) * (outerR + sw * 0.4), 0, Math.cos(ang) * (outerR + sw * 0.4));
+          side.rotateY(ang);
+          group.add(side);
+        }
+      }
       // shoulders that lift the setting off the band
       for (const sgn of [-1, 1]) {
         const s = rod(new THREE.Vector3(sgn * 1.5, 0, outerR - 0.4), new THREE.Vector3(sgn * 1.0, 0, outerR + W * 0.2), 0.55, metal);
@@ -242,6 +271,26 @@ export function buildJewel(spec: JewelSpec, opts: { wearable?: boolean } = {}): 
     group.add(h);
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 10, 12), metal);
     post.rotation.x = Math.PI / 2; post.position.z = -5.5; group.add(post);
+  } else if (spec.kind === "drop" && spec.motif === "jhumka") {
+    // jhumka: domed stud top, then a bell with bead fringe
+    const top = new THREE.Mesh(new THREE.SphereGeometry(4, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), metal);
+    top.rotation.x = Math.PI / 2; group.add(top);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 10, 12), metal);
+    post.rotation.x = Math.PI / 2; post.position.z = -5.5; group.add(post);
+    group.add(chainAlong(new THREE.LineCurve3(new THREE.Vector3(0, -3.5, 0), new THREE.Vector3(0, -8, 0)), metal, 0.6));
+    const prof = [new THREE.Vector2(0.01, 0), new THREE.Vector2(1.2, -0.3), new THREE.Vector2(3.6, -3), new THREE.Vector2(6.2, -8), new THREE.Vector2(8.4, -12.5), new THREE.Vector2(8.8, -13.4), new THREE.Vector2(7.9, -13.2)];
+    const bell = new THREE.Mesh(new THREE.LatheGeometry(prof, 72), metal);
+    bell.position.y = -8.5; group.add(bell);
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2;
+      const bead = new THREE.Mesh(new THREE.SphereGeometry(0.75, 14, 10), metal);
+      bead.position.set(Math.cos(a) * 8.4, -8.5 - 14.6, Math.sin(a) * 8.4); group.add(bead);
+    }
+    for (let i = 0; i < 18; i++) { // filigree dots on the bell
+      const a = (i / 18) * Math.PI * 2;
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), metal);
+      dot.position.set(Math.cos(a) * 6.6, -8.5 - 9, Math.sin(a) * 6.6); group.add(dot);
+    }
   } else if (spec.kind === "drop") {
     // small stud at the lobe (origin), a few links, then the drop stone hanging below
     const top = new THREE.Mesh(stoneGeometry(3.2, "round", 12), accentMat);

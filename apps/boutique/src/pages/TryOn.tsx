@@ -8,6 +8,7 @@ import {
 import { cn } from "@ui";
 import { api } from "@/lib/api";
 import type { Product } from "@/lib/types";
+import { API_URL } from "@/lib/api";
 import { useStore } from "@/context/store";
 import { EASE, JewelImage, LuxuryButton, Modal, Price, t, useToast } from "@/design";
 import { LABEL, TIPS, defaults, detect, needs, place, preload, smoother, swing, type FitSpec, type Placement, type TryOnType } from "@/lib/tryon/engine";
@@ -152,17 +153,21 @@ function Studio({ slug }: { slug: string }) {
   useEffect(() => {
     if (!show3d || !spec3d) return;
     let alive = true;
-    import("@/lib/jewel3d/ar").then(({ createJewelAR }) => {
+    const model = product?.model3d;
+    Promise.all([
+      import("@/lib/jewel3d/ar"),
+      model ? import("@/lib/jewel3d/custom").then(({ loadProductModel }) => loadProductModel(model, API_URL, spec3d)).catch(() => null) : Promise.resolve(null),
+    ]).then(([{ createJewelAR }, jewel]) => {
       if (!alive || !arCanvas.current) return;
       try {
-        arRef.current = createJewelAR(arCanvas.current, spec3d);
+        arRef.current = createJewelAR(arCanvas.current, spec3d, jewel);
         const l = lmsRef.current;
         if (phase === "photo" && l?.pts) arRef.current.update(l.pts, l.W, l.H);
       } catch { setUse3d(false); }
     }).catch(() => setUse3d(false));
     return () => { alive = false; arRef.current?.dispose(); arRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [show3d, spec3dKey, phase]);
+  }, [show3d, spec3dKey, phase, product?.model3d]);
   /* photo: re-place the 3D ring whenever detection updates */
   useEffect(() => {
     const l = lmsRef.current;

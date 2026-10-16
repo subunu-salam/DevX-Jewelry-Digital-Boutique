@@ -3,6 +3,7 @@ import { Camera, Loader2, Maximize2, Minimize2, Pause, Play, RotateCcw, Rotate3d
 import { cn } from "@ui";
 import { GEMS, METALS, specFromProduct, type GemKey, type Metal } from "@/lib/jewel3d/spec";
 import type { Viewer } from "@/lib/jewel3d/viewer";
+import { API_URL } from "@/lib/api";
 
 const SWATCH: Record<Metal, string> = {
   yellow: "radial-gradient(circle at 35% 30%, #fff3c4, #e9c35f 45%, #8a6416)",
@@ -11,7 +12,7 @@ const SWATCH: Record<Metal, string> = {
 };
 const GEM_CHOICES: GemKey[] = ["diamond", "ruby", "sapphire", "emerald", "morganite", "amethyst", "citrine", "aquamarine"];
 
-interface ProductLike { name: string; slug?: string; metalColor?: string | null; stoneType?: string | null; tags?: string[]; category?: { slug: string } | null; tryOn?: { type: string } | null }
+interface ProductLike { name: string; slug?: string; metalColor?: string | null; stoneType?: string | null; tags?: string[]; category?: { slug: string } | null; tryOn?: { type: string } | null; model3d?: string | null }
 
 /** Photoreal, interactive 3D view of a piece — generated from its catalogue details. */
 export function Jewel3DViewer({ product, className }: { product: ProductLike; className?: string }) {
@@ -29,15 +30,20 @@ export function Jewel3DViewer({ product, className }: { product: ProductLike; cl
     if (!spec || !canvas.current) return;
     let alive = true;
     setState("loading");
-    import("@/lib/jewel3d/viewer").then(({ createViewer }) => {
+    const model = product.model3d;
+    Promise.all([
+      import("@/lib/jewel3d/viewer"),
+      // the real CAD model uploaded in the CRM, if any (falls back to the generated piece)
+      model ? import("@/lib/jewel3d/custom").then(({ loadProductModel }) => loadProductModel(model, API_URL, spec)).catch(() => null) : Promise.resolve(null),
+    ]).then(([{ createViewer }, jewel]) => {
       if (!alive || !canvas.current) return;
-      try { viewer.current = createViewer(canvas.current, spec); setState("ready"); }
+      try { viewer.current = createViewer(canvas.current, spec, { jewel: jewel ?? undefined }); setState("ready"); }
       catch { setState("error"); }
     }).catch(() => alive && setState("error"));
     const onFs = () => setFull(document.fullscreenElement === wrap.current);
     document.addEventListener("fullscreenchange", onFs);
     return () => { alive = false; document.removeEventListener("fullscreenchange", onFs); viewer.current?.dispose(); viewer.current = null; };
-  }, [spec]);
+  }, [spec, product.model3d]);
 
   if (!spec) return null;
   const pickMetal = (m: Metal) => { setMetal(m); viewer.current?.setMetal(m); };
