@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, useReducedMotion } from "motion/react";
-import { ArrowRight, BadgeCheck, CalendarClock, KeyRound, ShieldCheck } from "lucide-react";
+import { ArrowRight, BadgeCheck, CalendarClock, Coins, KeyRound, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Product, Storefront } from "@/lib/types";
 import { EASE, JewelImage, LuxuryButton, OpeningScreen, Price, fallbackImage, lineUp, reveal, stagger, t } from "@/design";
@@ -56,6 +56,19 @@ export default function Home() {
 
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={t(0.9, 0.9)}>
           <EliteCTA label="Enter the collection" onClick={() => navigate("/catalog")} />
+        </motion.div>
+
+        {/* Gold Savings Plans — highlighted entry point */}
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={t(1.05, 0.9)}>
+          <Link to="/gold-savings" className="group relative mt-4 flex items-center gap-4 overflow-hidden rounded-[22px] border border-brand/40 bg-surface px-5 py-4 transition hover:border-brand">
+            <span className="pointer-events-none absolute -right-8 -top-10 size-32 rounded-full bg-brand/15 blur-2xl" />
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand/15 text-brand-deep"><Coins className="size-5" /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[10px] font-semibold uppercase tracking-[0.28em] text-brand-deep">New · Gold Savings</span>
+              <span className="block font-serif text-lg leading-snug">Save monthly, earn a bonus — or lock in today's gold rate.</span>
+            </span>
+            <ArrowRight className="size-4 shrink-0 text-brand-deep transition group-hover:translate-x-0.5" />
+          </Link>
         </motion.div>
       </section>
 
