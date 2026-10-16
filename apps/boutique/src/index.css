@@ -172,3 +172,14 @@
 }
 .lux-tilt:hover .lux-spot { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .lux-tilt { transform: none !important; } }
+
+/* Virtual try-on: a slow glint travelling across the metal (masked to the piece in TryOn.tsx) */
+.jewel-shine {
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 250, 235, .75) 46%, rgba(255, 255, 255, .95) 50%, rgba(255, 245, 220, .6) 54%, transparent 70%);
+  background-size: 260% 100%;
+  mix-blend-mode: screen;
+  opacity: .55;
+  animation: jewel-shine 3.6s cubic-bezier(.45, 0, .2, 1) infinite;
+}
+@keyframes jewel-shine { 0% { background-position: 130% 0; } 55%, 100% { background-position: -30% 0; } }
+@media (prefers-reduced-motion: reduce) { .jewel-shine { animation: none; opacity: 0; } }

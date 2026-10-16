@@ -270,6 +270,17 @@ publicRouter.post("/appointments", optionalAuth, async (req, res) => {
   res.status(201).json({ reference: appt.reference, id: appt.id });
 });
 
+/* ── Try-on cut-outs made in the CRM studio (transparent PNG) ── */
+publicRouter.get("/tryon-assets/:productId", async (req, res) => {
+  const a = await prisma.tryOnAsset.findUnique({ where: { productId: req.params.productId } });
+  if (!a) return res.status(404).json({ error: "Not found" });
+  res.setHeader("Content-Type", "image/png");
+  // URLs carry ?v=<updatedAt>, so they can be cached for a long time.
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  res.send(Buffer.from(a.png));
+});
+
 /* ── Public quote view via share token ── */
 publicRouter.get("/quotes/shared/:token", async (req, res) => {
   const quote = await prisma.quotation.findUnique({

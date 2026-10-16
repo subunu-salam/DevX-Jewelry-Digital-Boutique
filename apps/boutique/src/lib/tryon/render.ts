@@ -13,6 +13,10 @@ export interface Fit {
   k: number;
   /** Necklace/pendant drop height relative to the base (choker sits higher). */
   drop?: number;
+  /** Point of the overlay that touches the body (0–1), from the CRM Try-on Studio. */
+  anchorPt?: { x: number; y: number } | null;
+  /** True width of the piece in mm (one earring for pairs) — enables real-size display. */
+  widthMm?: number | null;
 }
 
 export interface Rendered { src: string; aspect: number; fit: Fit }

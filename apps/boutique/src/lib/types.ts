@@ -27,7 +27,10 @@ export interface Product {
   tags: string[];
   availability: Availability[];
   /** Virtual try-on support (null when not available for this piece). */
-  tryOn?: { type: "necklace" | "pendant" | "earrings" | "ring" | "bracelet"; assetUrl: string | null } | null;
+  tryOn?: {
+    type: "necklace" | "pendant" | "earrings" | "ring" | "bracelet"; assetUrl: string | null;
+    anchor?: { x: number; y: number } | null; widthMm?: number | null; pair?: boolean; splitX?: number | null;
+  } | null;
   // full detail
   description?: string;
   stoneType?: string | null;
