@@ -3,7 +3,15 @@
  * (category, metal colour, stone, name/tags) so every product gets a 3D model without
  * a 3D artist — e.g. "Oval Halo Ring, 18K White, Diamond" → oval centre stone, halo, white gold.
  */
-export type JewelKind = "ring" | "stud" | "pendant" | "bangle";
+export type JewelKind =
+  | "ring"
+  | "stud" | "drop" | "hoop"                                   // earrings
+  | "pendant" | "riviere" | "pearlStrand" | "choker" | "chain" // necklaces
+  | "bangle" | "tennis" | "linkBracelet";                     // bracelets
+
+export const isEarring = (k: JewelKind) => k === "stud" || k === "drop" || k === "hoop";
+export const isNeck = (k: JewelKind) => k === "pendant" || k === "riviere" || k === "pearlStrand" || k === "choker" || k === "chain";
+export const isWrist = (k: JewelKind) => k === "bangle" || k === "tennis" || k === "linkBracelet";
 export type Metal = "yellow" | "white" | "rose";
 export type GemKey = "diamond" | "ruby" | "sapphire" | "emerald" | "morganite" | "amethyst" | "citrine" | "aquamarine" | "pearl";
 export type Shape = "round" | "oval" | "cushion" | "emerald" | "pear";
@@ -46,21 +54,28 @@ export function specFromProduct(p: ProductLike): JewelSpec | null {
   const words = `${p.name} ${(p.tags ?? []).join(" ")} ${cat} ${p.stoneType ?? ""}`.toLowerCase();
   const has = (...k: string[]) => k.some((w) => words.includes(w));
   const t = p.tryOn?.type ?? "";
+  const isRing = t === "ring" || (!t && has("ring", "band", "solitaire"));
+  const isEar = t === "earrings" || (!t && has("earring", "stud", "hoop", "jhumka"));
+  const isNeckP = t === "pendant" || t === "necklace" || (!t && has("pendant", "necklace", "choker", "riviere", "rivière", "strand", "chain"));
+  const isWristP = t === "bracelet" || (!t && has("bangle", "bracelet", "cuff", "kada"));
   const kind: JewelKind | null =
-    t === "ring" || has("ring", "band", "solitaire") ? "ring"
-      : t === "earrings" || has("earring", "stud") ? "stud"
-        : t === "pendant" || t === "necklace" || has("pendant", "necklace") ? "pendant"
-          : t === "bracelet" || has("bangle", "bracelet") ? "bangle" : null;
+    isRing ? "ring"
+      : isEar ? (has("hoop", "huggie") ? "hoop" : has("drop", "dangle", "chandelier", "jhumka") ? "drop" : "stud")
+        : isNeckP ? (t === "pendant" || has("pendant", "evil-eye", "evil eye", "locket") ? "pendant"
+          : has("riviere", "rivière", "tennis") ? "riviere" : has("pearl") ? "pearlStrand" : has("choker", "collar") ? "choker"
+            : has("chain") ? "chain" : "pendant")
+          : isWristP ? (has("tennis", "riviere") ? "tennis" : has("chain", "link") ? "linkBracelet" : "bangle") : null;
   if (!kind) return null;
   const mc = (p.metalColor ?? "").toLowerCase();
   const metal: Metal = mc.includes("rose") ? "rose" : mc.includes("white") || mc.includes("platinum") || mc.includes("silver") ? "white" : "yellow";
   const gem: GemKey | null =
     has("pearl") ? "pearl" : has("ruby") ? "ruby" : has("sapphire") ? "sapphire" : has("emerald") ? "emerald"
       : has("morganite", "pink") ? "morganite" : has("amethyst") ? "amethyst" : has("citrine") ? "citrine" : has("aquamarine")
-        ? "aquamarine" : has("diamond", "solitaire", "brilliant", "halo", "riviere", "tennis") ? "diamond" : kind === "bangle" ? null : "diamond";
+        ? "aquamarine" : has("diamond", "solitaire", "brilliant", "halo", "riviere", "rivière", "tennis") ? "diamond"
+          : kind === "bangle" || kind === "chain" || kind === "linkBracelet" || kind === "hoop" || kind === "choker" ? null : "diamond";
   const shape: Shape = has("oval") ? "oval" : has("cushion") ? "cushion" : has("emerald cut", "emerald-cut", "baguette") ? "emerald" : has("pear", "drop") ? "pear" : "round";
   const halo = has("halo"), pave = has("pave", "pavé", "eternity", "tennis");
   const style: Style = gem === null ? "plain" : halo && pave ? "halo-pave" : halo ? "halo" : pave ? "pave" : kind === "pendant" ? "halo" : "solitaire";
-  const stoneMm = kind === "ring" ? (has("cocktail") ? 9 : 6.5) : kind === "stud" ? 5.5 : kind === "pendant" ? 8 : 3;
+  const stoneMm = kind === "ring" ? (has("cocktail") ? 9 : 6.5) : kind === "stud" ? 5.5 : kind === "drop" ? 7 : kind === "pendant" ? 8 : kind === "pearlStrand" ? 7 : 3;
   return { kind, metal, gem, shape, style, stoneMm };
 }

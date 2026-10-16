@@ -74,7 +74,7 @@ export function Jewel3DViewer({ product, className }: { product: ProductLike; cl
               className={cn("size-7 rounded-full ring-offset-2 transition", metal === m ? "ring-2 ring-[#A8874E]" : "hover:scale-110")} style={{ background: SWATCH[m] }} />
           ))}
         </div>
-        {gem && gem !== "pearl" && spec.kind !== "bangle" && (
+        {gem && gem !== "pearl" && (
           <div className="flex max-w-full items-center gap-1.5 overflow-x-auto rounded-full bg-white/90 p-1.5 shadow-sm backdrop-blur" role="radiogroup" aria-label="Centre stone">
             {GEM_CHOICES.map((g) => (
               <button key={g} role="radio" aria-checked={gem === g} title={GEMS[g].label} onClick={() => pickGem(g)}

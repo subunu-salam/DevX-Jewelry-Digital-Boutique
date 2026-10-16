@@ -4,7 +4,7 @@
  * Studs & pendants: face +Z (towards the viewer), up = +Y.
  */
 import * as THREE from "three";
-import { GEMS, METALS, type GemKey, type JewelSpec, type Metal, type Shape } from "./spec";
+import { GEMS, METALS, isEarring, isNeck, type GemKey, type JewelSpec, type Metal, type Shape } from "./spec";
 
 /* ───────────── Materials ───────────── */
 
@@ -25,6 +25,13 @@ export function gemMaterial(key: GemKey, small = false) {
     });
   }
   const tint = new THREE.Color(g.color);
+  if (small) {
+    // Melee stones are too small for refraction to read — a bright, mirror-faceted finish looks right.
+    return new THREE.MeshPhysicalMaterial({
+      color: key === "diamond" ? new THREE.Color("#f4f8ff") : tint, metalness: key === "diamond" ? 0.35 : 0.1, roughness: 0.02,
+      ior: g.ior, specularIntensity: 1, envMapIntensity: key === "diamond" ? 4.5 : 3, clearcoat: 1, clearcoatRoughness: 0, flatShading: true,
+    });
+  }
   return new THREE.MeshPhysicalMaterial({
     color: key === "diamond" ? new THREE.Color("#ffffff") : tint,
     metalness: 0, roughness: 0, transmission: key === "diamond" ? 0.92 : 0.82, thickness: small ? 0.8 : 3.2, ior: g.ior,
@@ -108,6 +115,40 @@ function bandGeometry(innerR: number, width: number, thick: number) {
   return new THREE.LatheGeometry(pts, 160);
 }
 
+/**
+ * Necklace path in front view (XY, facing +Z), origin at the base of the neck between the
+ * two sides of the chain. The ends sweep back (−Z) around the neck.
+ */
+export function neckCurve(depth: number, halfWidth = 58) {
+  const hw = halfWidth;
+  return new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-hw * 0.92, 2, -24), new THREE.Vector3(-hw, -depth * 0.18, -10),
+    new THREE.Vector3(-hw * 0.82, -depth * 0.62, -2), new THREE.Vector3(-hw * 0.42, -depth * 0.94, 0),
+    new THREE.Vector3(0, -depth, 0.5),
+    new THREE.Vector3(hw * 0.42, -depth * 0.94, 0), new THREE.Vector3(hw * 0.82, -depth * 0.62, -2),
+    new THREE.Vector3(hw, -depth * 0.18, -10), new THREE.Vector3(hw * 0.92, 2, -24),
+  ], false, "centripetal");
+}
+
+/** Real chain: interlocking oval links along a curve (instanced, so long chains stay fast). */
+export function chainAlong(curve: THREE.Curve<THREE.Vector3>, mat: THREE.Material, link = 1) {
+  const len = curve.getLength(), pitch = link * 1.55;
+  const n = Math.max(2, Math.floor(len / pitch));
+  const geo = new THREE.TorusGeometry(link, link * 0.26, 8, 20);
+  geo.scale(1.45, 1, 1);
+  const mesh = new THREE.InstancedMesh(geo, mat, n);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), twist = new THREE.Quaternion(), X = new THREE.Vector3(1, 0, 0);
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n, p = curve.getPointAt(t), tan = curve.getTangentAt(t).normalize();
+    q.setFromUnitVectors(X, tan);
+    twist.setFromAxisAngle(tan, i % 2 ? Math.PI / 2 : 0);
+    m.compose(p, twist.multiply(q), new THREE.Vector3(1, 1, 1));
+    mesh.setMatrixAt(i, m);
+  }
+  mesh.castShadow = true;
+  return mesh;
+}
+
 export interface Jewel {
   group: THREE.Group;
   metal: THREE.MeshPhysicalMaterial;
@@ -118,7 +159,7 @@ export interface Jewel {
 }
 
 /** Build the piece described by `spec`. */
-export function buildJewel(spec: JewelSpec): Jewel {
+export function buildJewel(spec: JewelSpec, opts: { wearable?: boolean } = {}): Jewel {
   const group = new THREE.Group();
   const metal = metalMaterial(spec.metal);
   const accents: THREE.Mesh[] = [];
@@ -201,30 +242,104 @@ export function buildJewel(spec: JewelSpec): Jewel {
     group.add(h);
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 10, 12), metal);
     post.rotation.x = Math.PI / 2; post.position.z = -5.5; group.add(post);
-  } else if (spec.kind === "pendant") {
-    const h = head(true);
+  } else if (spec.kind === "drop") {
+    // small stud at the lobe (origin), a few links, then the drop stone hanging below
+    const top = new THREE.Mesh(stoneGeometry(3.2, "round", 12), accentMat);
+    top.rotation.x = Math.PI / 2; group.add(top); accents.push(top);
+    const cup = new THREE.Mesh(new THREE.TorusGeometry(1.75, 0.35, 10, 28), metal); group.add(cup);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 10, 12), metal);
+    post.rotation.x = Math.PI / 2; post.position.z = -5.5; group.add(post);
+    const drop = spec.gem === "pearl" ? 0 : W * depthK * 0.5;
+    const linkLen = 9;
+    group.add(chainAlong(new THREE.LineCurve3(new THREE.Vector3(0, -2, 0), new THREE.Vector3(0, -2 - linkLen, 0)), metal, 0.7));
+    const h = head(spec.style === "halo" || spec.style === "halo-pave");
     h.rotation.x = Math.PI / 2;
+    h.position.y = -2 - linkLen - (spec.gem === "pearl" ? W / 2 : drop) - 1.2;
     group.add(h);
-    const top = W * depthK * 0.5 + (spec.gem ? 2.2 : 0.5);
-    const bail = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.45, 12, 32), metal);
-    bail.position.set(0, top + 1.4, -0.4); group.add(bail);
-    // fine chain sweeping up out of frame
-    for (const sgn of [-1, 1]) {
-      const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, top + 2.6, -0.4), new THREE.Vector3(sgn * 3.5, top + 8, -0.8), new THREE.Vector3(sgn * 7, top + 18, -1.4)]);
-      const chain = new THREE.Mesh(new THREE.TubeGeometry(curve, 80, 0.42, 8), metal);
-      chain.userData.chain = true; group.add(chain);
+  } else if (spec.kind === "hoop") {
+    const R = 9.5;
+    const hoop = new THREE.Mesh(new THREE.TorusGeometry(R, 1.15, 20, 96), metal);
+    hoop.position.y = -R; group.add(hoop);
+    if (spec.gem) {
+      for (let a = -Math.PI * 0.85; a <= -Math.PI * 0.15; a += 0.16) {
+        const sx = Math.cos(a) * R, sy = Math.sin(a) * R - R;
+        const st = new THREE.Mesh(stoneGeometry(1.4, "round", 8), accentMat);
+        st.rotation.x = Math.PI / 2; st.position.set(sx, sy, 1.0); group.add(st); accents.push(st);
+      }
+    }
+  } else if (isNeck(spec.kind)) {
+    const depth = spec.kind === "choker" ? 26 : spec.kind === "riviere" ? 58 : spec.kind === "pearlStrand" ? 66 : 82;
+    const curve = neckCurve(depth);
+    const full = opts.wearable || spec.kind !== "pendant";
+    if (spec.kind === "pendant") {
+      const h = head(true);
+      h.rotation.x = Math.PI / 2;
+      const top = W * depthK * 0.5 + (spec.gem ? 2.2 : 0.5);
+      const bailY = full ? -depth - 1.5 : top + 1.4;
+      const bail = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.45, 12, 32), metal);
+      bail.position.set(0, bailY, 0.2); group.add(bail);
+      h.position.y = full ? bailY - 1.5 - top : 0;
+      group.add(h);
+      if (full) group.add(chainAlong(curve, metal, 0.55));
+      else for (const sgn of [-1, 1]) {
+        const c = new THREE.CatmullRomCurve3([new THREE.Vector3(0, top + 2.6, -0.4), new THREE.Vector3(sgn * 3.5, top + 8, -0.8), new THREE.Vector3(sgn * 7, top + 18, -1.4)]);
+        group.add(chainAlong(c, metal, 0.55));
+      }
+    } else if (spec.kind === "chain") {
+      group.add(chainAlong(curve, metal, 1.1));
+    } else if (spec.kind === "pearlStrand") {
+      const n = Math.floor(curve.getLength() / (W * 1.04));
+      const pearls = new THREE.InstancedMesh(new THREE.SphereGeometry(W / 2, 32, 20), gemMaterial("pearl"), n);
+      const m = new THREE.Matrix4();
+      for (let i = 0; i < n; i++) { const pt = curve.getPointAt((i + 0.5) / n); m.makeTranslation(pt.x, pt.y, pt.z); pearls.setMatrixAt(i, m); }
+      group.add(pearls);
+    } else if (spec.kind === "riviere" || spec.kind === "choker") {
+      if (spec.kind === "choker") group.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 160, 2.2, 14), metal));
+      const L = curve.getLength();
+      let u = 0;
+      const gemKey = spec.gem && spec.gem !== "pearl" ? spec.gem : "diamond";
+      while (u < L) {
+        const t = u / L, mid = 1 - Math.abs(t - 0.5) * 2; // graduated: larger at the front
+        const sw = spec.kind === "choker" ? 2.6 : 2.6 + mid * mid * 3;
+        const pt = curve.getPointAt(Math.min(1, t));
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(sw * 0.56, sw * 0.42, sw * 0.5, 20), metal);
+        const lift = spec.kind === "choker" ? 2.3 : 0; // sit on top of the choker band
+        col.rotation.x = Math.PI / 2; col.position.set(pt.x, pt.y, pt.z - sw * 0.1 + lift); group.add(col);
+        const st = new THREE.Mesh(stoneGeometry(sw, "round", sw > 4 ? 16 : 10), gemMaterial(gemKey, sw < 4));
+        st.rotation.x = Math.PI / 2; st.position.set(pt.x, pt.y, pt.z + sw * 0.12 + lift); group.add(st); accents.push(st);
+        u += sw * 1.08;
+      }
     }
   } else {
+    // bracelets — axis along Y like a ring
     innerR = 29;
-    const band = new THREE.Mesh(bandGeometry(innerR, 5, 3), metal);
-    group.add(band);
-    if (spec.gem) {
-      const sw = 2.2, outer = innerR + 3, step = (sw * 1.1) / outer;
-      for (let a = 0; a < Math.PI * 2 - step / 2; a += step) {
-        const s = new THREE.Mesh(stoneGeometry(sw, "round", 8), gemMaterial(spec.gem === "pearl" ? "diamond" : spec.gem, true));
-        s.position.set(Math.sin(a) * (outer - 0.2), 0, Math.cos(a) * (outer - 0.2));
-        s.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(Math.sin(a), 0, Math.cos(a)));
-        group.add(s); accents.push(s);
+    if (spec.kind === "bangle") {
+      group.add(new THREE.Mesh(bandGeometry(innerR, 5, 3), metal));
+      if (spec.gem) {
+        const sw = 2.2, outer = innerR + 3, step = (sw * 1.1) / outer;
+        for (let a = 0; a < Math.PI * 2 - step / 2; a += step) {
+          const st = new THREE.Mesh(stoneGeometry(sw, "round", 8), gemMaterial(spec.gem === "pearl" ? "diamond" : spec.gem, true));
+          st.position.set(Math.sin(a) * (outer - 0.2), 0, Math.cos(a) * (outer - 0.2));
+          st.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(Math.sin(a), 0, Math.cos(a)));
+          group.add(st); accents.push(st);
+        }
+      }
+    } else {
+      const R = innerR + 1.8;
+      const loop = new THREE.CatmullRomCurve3(Array.from({ length: 48 }, (_, i) => { const a = (i / 48) * Math.PI * 2; return new THREE.Vector3(Math.sin(a) * R, 0, Math.cos(a) * R); }), true);
+      if (spec.kind === "linkBracelet") group.add(chainAlong(loop, metal, 2.2));
+      else {
+        const sw = 3, n = Math.floor((Math.PI * 2 * R) / (sw * 1.12));
+        const gemKey = spec.gem && spec.gem !== "pearl" ? spec.gem : "diamond";
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2, out = new THREE.Vector3(Math.sin(a), 0, Math.cos(a));
+          const col = new THREE.Mesh(new THREE.BoxGeometry(sw * 1.02, sw * 1.02, 1.8), metal);
+          col.position.copy(out.clone().multiplyScalar(R)); col.lookAt(out.clone().multiplyScalar(R * 2)); group.add(col);
+          const st = new THREE.Mesh(stoneGeometry(sw * 0.92, "round", 12), gemMaterial(gemKey, true));
+          st.position.copy(out.clone().multiplyScalar(R + 1.05));
+          st.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), out);
+          group.add(st); accents.push(st);
+        }
       }
     }
   }
@@ -236,15 +351,23 @@ export function buildJewel(spec: JewelSpec): Jewel {
 export function setMetal(j: Jewel, metal: Metal) { j.metal.color.set(METALS[metal].color); }
 /** Swap the centre gem in place (configurator). */
 export function setGem(j: Jewel, gem: GemKey) {
-  if (!j.centre || gem === "pearl") return;
-  const old = j.centre.material as THREE.Material;
-  j.centre.material = gemMaterial(gem);
-  old.dispose();
+  if (gem === "pearl") return;
+  if (j.centre) {
+    const old = j.centre.material as THREE.Material;
+    j.centre.material = gemMaterial(gem);
+    old.dispose();
+  } else if (j.accents.length) {
+    // rivière / tennis pieces: every stone is the "gem"
+    const mat = gemMaterial(gem, true);
+    j.accents.forEach((a) => { a.material = mat; });
+  }
 }
 
 /** Showcase pose for the viewer: rings stand upright with the stone on top, studs/pendants face the camera. */
 export function showcasePose(j: Jewel, kind: JewelSpec["kind"]) {
   if (kind === "ring") j.group.rotation.set(-Math.PI / 2 + 0.42, 0, 0); // head (+Z) → up (+Y), finger axis towards camera
-  else if (kind === "bangle") j.group.rotation.set(0.5, 0, 0);
+  else if (kind === "bangle" || kind === "tennis" || kind === "linkBracelet") j.group.rotation.set(0.55, 0, 0.12);
+  else if (isNeck(kind) && kind !== "pendant") j.group.rotation.set(-0.28, 0, 0);
+  else if (isEarring(kind)) j.group.rotation.set(0, kind === "hoop" ? 0.35 : 0, 0);
   else j.group.rotation.set(0, 0, 0);
 }
