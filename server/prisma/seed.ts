@@ -7,7 +7,12 @@ const prisma = new PrismaClient();
 
 const IMG = (id: string) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=1100&q=80`;
 
-// Curated real Unsplash jewellery photography
+/** Studio shots of each catalogue piece (rendered from its own 3D model), served by the boutique
+ *  and CRM from /catalogue — so every product photo matches the product's name. */
+const SHOT = (sku: string, n = 1) => `/catalogue/${sku}-${n}.jpg`;
+const SHOTS = (sku: string) => [1, 2, 3].map((n, i) => ({ url: SHOT(sku, n), isPrimary: i === 0, sort: i }));
+
+// Generic lifestyle photography (site hero only)
 const PHOTOS = {
   ring1: IMG("photo-1605100804763-247f67b3557e"),
   ring2: IMG("photo-1515562141207-7a88fb7ce338"),
@@ -44,11 +49,37 @@ async function attachSampleModels() {
   }
 }
 
+/** Existing databases: swap the old stock photos on the demo pieces for their matching studio shots.
+ *  Only touches images still pointing at the stock-photo site, so staff-uploaded photos are kept. */
+const CATALOGUE_SKUS = new Set(["AR-2201", "AR-2202", "AR-2203", "AR-2204", "AN-3301", "AN-3302", "AN-3303", "AE-4401", "AE-4402", "AB-5501", "AB-5502", "AG-6601", "AP-7701", "AP-7702"]);
+async function refreshCatalogueImages() {
+  const STOCK = "images.unsplash.com";
+  const products = await prisma.product.findMany({ include: { media: true } });
+  for (const pr of products) {
+    if (!CATALOGUE_SKUS.has(pr.sku)) continue;
+    const stock = pr.media.filter((m) => m.url.includes(STOCK));
+    if (!stock.length) continue;
+    await prisma.productMedia.deleteMany({ where: { id: { in: stock.map((m) => m.id) } } });
+    const keep = pr.media.filter((m) => !m.url.includes(STOCK) && !m.kind.startsWith("tryon") && m.kind !== "model3d");
+    await prisma.productMedia.createMany({
+      data: SHOTS(pr.sku).map((m) => ({ ...m, productId: pr.id, isPrimary: m.isPrimary && !keep.some((k) => k.isPrimary) })),
+    });
+    console.log(`✓ Photos updated for ${pr.sku}`);
+  }
+  const heroes: Record<string, string> = { bridal: "AN-3301", heritage: "AN-3302", everyday: "AB-5502", solitaire: "AR-2201" };
+  for (const [slug, sku] of Object.entries(heroes))
+    await prisma.collection.updateMany({ where: { slug, heroImage: { contains: STOCK } }, data: { heroImage: SHOT(sku) } });
+  const offers: Record<string, string> = { BRIDAL0: "AR-2201", EIDGOLD: "AG-6601", SOL10: "AR-2202" };
+  for (const [code, sku] of Object.entries(offers))
+    await prisma.offer.updateMany({ where: { code, image: { contains: STOCK } }, data: { image: SHOT(sku) } });
+}
+
 async function main() {
   // The build runs this on every deploy — never wipe a live database unless explicitly asked.
   if (process.env.SEED_RESET !== "1" && (await prisma.tenant.count()) > 0) {
     console.log("✓ Database already seeded — keeping existing data (set SEED_RESET=1 to reset).");
     await attachSampleModels();
+    await refreshCatalogueImages();
     return;
   }
   console.log("⟳ Resetting database…");
@@ -128,10 +159,10 @@ async function main() {
 
   // ── Collections ──
   const colData = [
-    { name: "Bridal Couture", slug: "bridal", description: "Heirloom pieces for the wedding day.", heroImage: PHOTOS.ring1, featured: true },
-    { name: "Heritage", slug: "heritage", description: "22K craftsmanship rooted in tradition.", heroImage: PHOTOS.necklace1, featured: true },
-    { name: "Everyday Luxe", slug: "everyday", description: "Light, wearable luxury for every day.", heroImage: PHOTOS.bracelet1, featured: true },
-    { name: "Solitaire", slug: "solitaire", description: "Certified diamonds, set to perfection.", heroImage: PHOTOS.ring2, featured: true },
+    { name: "Bridal Couture", slug: "bridal", description: "Heirloom pieces for the wedding day.", heroImage: SHOT("AN-3301"), featured: true },
+    { name: "Heritage", slug: "heritage", description: "22K craftsmanship rooted in tradition.", heroImage: SHOT("AN-3302"), featured: true },
+    { name: "Everyday Luxe", slug: "everyday", description: "Light, wearable luxury for every day.", heroImage: SHOT("AB-5502"), featured: true },
+    { name: "Solitaire", slug: "solitaire", description: "Certified diamonds, set to perfection.", heroImage: SHOT("AR-2201"), featured: true },
   ];
   const cols: Record<string, string> = {};
   for (const c of colData) {
@@ -193,7 +224,7 @@ async function main() {
         certIssuer: p.stoneType === "Diamond" ? "IGI" : null,
         featured: p.featured ?? false,
         isNew: p.isNew ?? false,
-        media: { create: [{ url: p.image, isPrimary: true, sort: 0 }] },
+        media: { create: SHOTS(p.sku) },
         inventory: {
           create: branches.map((b, i) => ({ branchId: b.id, quantity: ((idx + i) % 5) + 1 })),
         },
@@ -246,9 +277,9 @@ async function main() {
   // ── Offers ──
   await prisma.offer.createMany({
     data: [
-      { tenantId: tenant.id, title: "Zero Making Charges — Bridal Week", description: "Waived making charges on all Bridal Couture pieces this week.", image: PHOTOS.ring1, discount: 12, code: "BRIDAL0", status: "ACTIVE", validUntil: new Date(Date.now() + 14 * 864e5) },
-      { tenantId: tenant.id, title: "Eid Gold Exchange Bonus", description: "Extra AED 20/g on old-gold exchange across all branches.", image: PHOTOS.bangle1, discount: 0, code: "EIDGOLD", status: "ACTIVE", validUntil: new Date(Date.now() + 21 * 864e5) },
-      { tenantId: tenant.id, title: "Solitaire Season — 10% off", description: "10% off certified solitaires above 1 carat.", image: PHOTOS.ring2, discount: 10, code: "SOL10", status: "ACTIVE", validUntil: new Date(Date.now() + 30 * 864e5) },
+      { tenantId: tenant.id, title: "Zero Making Charges — Bridal Week", description: "Waived making charges on all Bridal Couture pieces this week.", image: SHOT("AR-2201"), discount: 12, code: "BRIDAL0", status: "ACTIVE", validUntil: new Date(Date.now() + 14 * 864e5) },
+      { tenantId: tenant.id, title: "Eid Gold Exchange Bonus", description: "Extra AED 20/g on old-gold exchange across all branches.", image: SHOT("AG-6601"), discount: 0, code: "EIDGOLD", status: "ACTIVE", validUntil: new Date(Date.now() + 21 * 864e5) },
+      { tenantId: tenant.id, title: "Solitaire Season — 10% off", description: "10% off certified solitaires above 1 carat.", image: SHOT("AR-2202"), discount: 10, code: "SOL10", status: "ACTIVE", validUntil: new Date(Date.now() + 30 * 864e5) },
     ],
   });
   console.log("✓ suppliers + offers");
