@@ -7,7 +7,8 @@ import { cn } from "@ui";
 import { api } from "@/lib/api";
 import { useStore } from "@/context/store";
 import type { Product } from "@/lib/types";
-import { Badge, Breadcrumb, EASE, LuxuryButton, fallbackImage, Price, ProductGrid, SectionHeading, flyToCart, stagger, t, useToast } from "@/design";
+import { Badge, Breadcrumb, EASE, Jewel3DViewer, LuxuryButton, fallbackImage, Price, ProductGrid, SectionHeading, flyToCart, stagger, t, useToast } from "@/design";
+import { specFromProduct } from "@/lib/jewel3d/spec";
 
 export default function ProductDetail() {
   const { slug } = useParams();
@@ -80,7 +81,9 @@ function Gallery({ product }: { product: Product }) {
   const [idx, setIdx] = useState(0);
   const [dir, setDir] = useState(1);
   const [full, setFull] = useState(false);
-  const go = (n: number) => { if (!images.length) return; setDir(n > idx ? 1 : -1); setIdx((n + images.length) % images.length); };
+  const can3d = !!specFromProduct(product);
+  const [mode, setMode] = useState<"photos" | "3d">("photos");
+  const go = (n: number) => { if (!images.length) return; setMode("photos"); setDir(n > idx ? 1 : -1); setIdx((n + images.length) % images.length); };
 
   return (
     <div className="md:sticky md:top-24 md:self-start">
@@ -97,8 +100,17 @@ function Gallery({ product }: { product: Product }) {
         )}
 
         <div className="relative flex-1">
-          <ZoomStage src={images[idx]} onBroken={() => onBroken(raw[idx])} alt={product.name} dir={dir} onNext={() => go(idx + 1)} onPrev={() => go(idx - 1)} count={images.length} onExpand={() => setFull(true)} />
-          <div className="absolute left-4 top-4 flex gap-1.5">
+          {mode === "3d" && can3d
+            ? <Jewel3DViewer product={product} />
+            : <ZoomStage src={images[idx]} onBroken={() => onBroken(raw[idx])} alt={product.name} dir={dir} onNext={() => go(idx + 1)} onPrev={() => go(idx - 1)} count={images.length} onExpand={() => setFull(true)} />}
+          {can3d && (
+            <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 rounded-full bg-surface/90 p-1 text-xs font-semibold shadow-sm backdrop-blur" style={mode === "3d" ? { bottom: "auto", top: 16 } : undefined}>
+              {(["photos", "3d"] as const).map((m) => (
+                <button key={m} onClick={() => setMode(m)} className={cn("rounded-full px-3.5 py-1.5 transition", mode === m ? "bg-ink text-on-ink" : "text-muted-foreground hover:text-foreground")}>{m === "3d" ? "View in 3D" : "Photos"}</button>
+              ))}
+            </div>
+          )}
+          <div className={cn("absolute left-4 top-4 flex gap-1.5", mode === "3d" && "hidden")}>
             {product.isNew && <Badge tone="new">New</Badge>}
             {product.certNumber && <Badge tone="new"><BadgeCheck className="size-3 text-brand-deep" />{product.certIssuer ?? "Certified"}</Badge>}
           </div>
