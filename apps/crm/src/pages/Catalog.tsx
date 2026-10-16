@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { Plus, Package, Star, Sparkles } from "lucide-react";
+import { Plus, Package, Star, Sparkles, Wand2 } from "lucide-react";
+import TryOnStudio from "@/components/TryOnStudio";
+import { TYPE_DEFAULTS, autoMask, exportCut, loadImage, toWorking, type TryOnType } from "@/lib/cutout";
 import { api } from "@/lib/api";
 import { aed } from "@/lib/format";
 import { Badge, Button, Card, Field, Input, Modal, PageHeader, Select } from "@/components/ui";
@@ -22,6 +24,8 @@ export default function Catalog() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tryOnFor, setTryOnFor] = useState<ProductRow | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -40,8 +44,9 @@ export default function Catalog() {
       <PageHeader
         title="Catalog & Inventory"
         subtitle="Create a piece once — it appears on the customer boutique instantly."
-        action={<Button onClick={() => setOpen(true)}><Plus className="size-4" /> New product</Button>}
+        action={<div className="flex gap-2"><Button variant="outline" onClick={() => setBulkOpen(true)}><Wand2 className="size-4" /> Prepare try-on images</Button><Button onClick={() => setOpen(true)}><Plus className="size-4" /> New product</Button></div>}
       />
+      {notice && <div className="mb-4 flex items-center justify-between rounded-lg border border-success/30 bg-success-bg px-4 py-2 text-sm text-success">{notice}<button onClick={() => setNotice(null)} className="text-xs">✕</button></div>}
 
       <Card>
         <div className="overflow-x-auto">
@@ -90,7 +95,7 @@ export default function Catalog() {
                   <td className="px-4 py-3">
                     <button onClick={() => setTryOnFor(r)} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs hover:bg-muted">
                       <Sparkles className={r.tryOn?.enabled ? "size-3.5 text-primary" : "size-3.5 text-muted-foreground"} />
-                      {r.tryOn?.enabled ? <span className="capitalize">{r.tryOn.effectiveType}{r.tryOn.assetUrl ? " · cut-out" : ""}</span> : <span className="text-muted-foreground">Off</span>}
+                      {r.tryOn?.enabled ? <span className="capitalize">{r.tryOn.effectiveType}{r.tryOn.assetUrl?.startsWith("/api/public/tryon-assets/") ? " · studio cut-out ✓" : r.tryOn.assetUrl ? " · cut-out" : " · needs cut-out"}</span> : <span className="text-muted-foreground">Off</span>}
                     </button>
                   </td>
                 </tr>
@@ -103,7 +108,8 @@ export default function Catalog() {
         </div>
       </Card>
 
-      <TryOnModal product={tryOnFor} onClose={() => setTryOnFor(null)} onSaved={() => { setTryOnFor(null); load(); }} />
+      <TryOnStudio product={tryOnFor} onClose={() => setTryOnFor(null)} onSaved={(m) => { setTryOnFor(null); setNotice(m); load(); }} />
+      <BulkPrepare open={bulkOpen} rows={rows} onClose={() => { setBulkOpen(false); load(); }} />
 
       <ProductModal
         open={open}
@@ -223,78 +229,41 @@ function ProductModal({ open, onClose, categories, collections, branches, onSave
   );
 }
 
-/* ── Virtual try-on settings (PRD: Virtual Try-On · AR assets in product media) ── */
-const TRYON_TYPES = ["necklace", "pendant", "earrings", "ring", "bracelet"];
 
-function TryOnModal({ product, onClose, onSaved }: { product: ProductRow | null; onClose: () => void; onSaved: () => void }) {
-  const [enabled, setEnabled] = useState(true);
-  const [type, setType] = useState("auto");
-  const [assetUrl, setAssetUrl] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!product) return;
-    const t = product.tryOn;
-    setEnabled(t ? t.enabled || t.type !== "auto" || !!t.assetUrl : true);
-    setType(t?.type ?? "auto");
-    setAssetUrl(t?.assetUrl ?? "");
-    setError(null);
-  }, [product]);
-
-  if (!product) return null;
-  const categoryType = product.tryOn?.categoryType ?? null;
-  const resolved = type === "auto" ? categoryType : type;
-
-  async function save() {
-    if (!product) return;
-    setError(null);
-    if (enabled && !resolved) { setError("Choose how this piece is worn — its category doesn't set it automatically."); return; }
-    if (assetUrl && !/^https:\/\//.test(assetUrl)) { setError("The cut-out must be an https:// image link."); return; }
-    setBusy(true);
-    try {
-      await api.put(`/api/crm/products/${product.id}`, { tryOn: { enabled, type, assetUrl: assetUrl || null } });
-      onSaved();
-    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+/* ── Bulk: auto cut-out for every piece shot on a plain background ── */
+function BulkPrepare({ open, rows, onClose }: { open: boolean; rows: ProductRow[]; onClose: () => void }) {
+  const [log, setLog] = useState<{ name: string; ok: boolean; note: string }[]>([]);
+  const [running, setRunning] = useState(false);
+  const todo = rows.filter((r) => r.tryOn?.enabled && r.tryOn.effectiveType && r.image && !r.tryOn.assetUrl?.startsWith("/api/public/tryon-assets/"));
+  useEffect(() => { if (open) setLog([]); }, [open]);
+  async function run() {
+    setRunning(true); setLog([]);
+    for (const r of todo) {
+      const t = r.tryOn!.effectiveType as TryOnType;
+      try {
+        const work = toWorking(await loadImage(r.image!));
+        const m = autoMask(work);
+        if ("error" in m) { setLog((l) => [...l, { name: r.name, ok: false, note: "Lifestyle/busy photo — open the Studio to cut out by hand or with AI" }]); continue; }
+        const d = TYPE_DEFAULTS[t], pair = t === "earrings" && work.width / work.height > 1.3;
+        const cut = exportCut(work, m.mask, { x: (pair ? d.anchor.x * 0.5 : d.anchor.x) * work.width, y: d.anchor.y * work.height }, pair, pair ? work.width / 2 : null);
+        if ("error" in cut) { setLog((l) => [...l, { name: r.name, ok: false, note: cut.error }]); continue; }
+        await api.put(`/api/crm/products/${r.id}/tryon-asset`, { type: t, png: cut.png, width: cut.width, height: cut.height, anchorX: cut.anchorX, anchorY: cut.anchorY, widthMm: d.mm, pair, splitX: cut.splitX });
+        setLog((l) => [...l, { name: r.name, ok: true, note: "Cut-out saved — check its anchor & size in the Studio" }]);
+      } catch (e) { setLog((l) => [...l, { name: r.name, ok: false, note: (e as Error).message }]); }
+    }
+    setRunning(false);
   }
-
+  const done = log.filter((x) => x.ok).length;
   return (
-    <Modal open={!!product} onClose={onClose} title={`Virtual try-on · ${product.name}`}>
-      <p className="text-sm text-muted-foreground">
-        Customers can see this piece on their own photo or live camera. It is always labelled as a visualization, and photos stay on the customer's device unless they request an AI render.
-      </p>
-
-      <label className="mt-4 flex items-center gap-2 text-sm font-medium">
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enable try-on for this piece
-      </label>
-
-      {enabled && (
-        <div className="mt-4 grid gap-4">
-          <Field label="How it's worn">
-            <Select value={type} onChange={setType}>
-              <option value="auto">Automatic from category{categoryType ? ` (${categoryType})` : " (not set)"}</option>
-              {TRYON_TYPES.map((t) => <option key={t} value={t} className="capitalize">{t}</option>)}
-            </Select>
-          </Field>
-          <Field label="Try-on cut-out (optional, transparent PNG)">
-            <Input value={assetUrl} onChange={setAssetUrl} placeholder="https://… (piece only, background removed)" />
-          </Field>
-          <div className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
-            <b className="text-foreground">For the most realistic result</b>, upload a front-facing photo of the piece alone with the background removed (PNG). Earrings: show the pair side by side.
-            Without a cut-out, the boutique automatically cuts out the product photo when it's shot on a plain background; lifestyle photos use the AI render instead (when enabled).
-          </div>
-          {assetUrl && /^https:\/\//.test(assetUrl) && (
-            <div className="flex justify-center rounded-lg p-4" style={{ backgroundImage: "repeating-conic-gradient(#e5e5e5 0% 25%, #fff 0% 50%)", backgroundSize: "16px 16px" }}>
-              <img src={assetUrl} alt="Cut-out preview" className="max-h-40 object-contain" />
-            </div>
-          )}
-        </div>
-      )}
-
-      {error && <p className="mt-3 text-sm text-danger">{error}</p>}
-      <div className="mt-6 flex justify-end gap-2">
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
+    <Modal open={open} onClose={onClose} title="Prepare try-on images" wide>
+      <p className="text-sm text-muted-foreground">Automatically cuts out every try-on piece whose photo is shot on a plain background ({todo.length} without a studio cut-out). Photos of the piece worn by a model are skipped — open those in the Try-on Studio.</p>
+      <div className="mt-4 max-h-80 space-y-1 overflow-y-auto">
+        {log.map((x) => <div key={x.name} className="flex justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2 text-xs"><span className="font-medium">{x.ok ? "✓" : "–"} {x.name}</span><span className={x.ok ? "text-success" : "text-muted-foreground"}>{x.note}</span></div>)}
+      </div>
+      {log.length > 0 && !running && <p className="mt-3 text-sm">{done} prepared · {log.length - done} need the Studio.</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="outline" onClick={onClose}>Close</Button>
+        <Button onClick={run} disabled={running || todo.length === 0}>{running ? `Working… ${log.length}/${todo.length}` : `Prepare ${todo.length} pieces`}</Button>
       </div>
     </Modal>
   );

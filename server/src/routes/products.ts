@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { isGalleryMedia, resolveTryOn, typeFromCategory } from "../lib/tryon.js";
+import { TRYON_TYPES, assetUrlFor, isGalleryMedia, resolveTryOn, typeFromCategory } from "../lib/tryon.js";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { requireStaff, requireRole } from "../middleware/auth.js";
@@ -88,7 +88,8 @@ const productSchema = z.object({
     .object({
       enabled: z.boolean(),
       type: z.enum(["auto", "necklace", "pendant", "earrings", "ring", "bracelet"]).default("auto"),
-      assetUrl: z.string().url().max(2048).nullable().optional(),
+      // https cut-out link, or a Try-on Studio asset path (/api/public/tryon-assets/…)
+      assetUrl: z.string().max(2048).refine((u) => /^https:\/\//.test(u) || u.startsWith("/api/public/tryon-assets/"), "Must be an https:// link").nullable().optional(),
     })
     .optional(),
   inventory: z
@@ -249,3 +250,47 @@ function tryOnSettings(pr: any) {
     categoryType: typeFromCategory(pr.category?.slug),
   };
 }
+
+
+/* ── Try-on Studio: save a transparent cut-out made in the CRM ── */
+const editors = requireRole("OWNER", "COMPANY_ADMIN", "BRANCH_MANAGER", "INVENTORY_STAFF");
+productRouter.put("/:id/tryon-asset", editors, async (req, res) => {
+  const p = req.principal!;
+  const body = z.object({
+    type: z.enum(TRYON_TYPES),
+    png: z.string().startsWith("data:image/png;base64,").max(6_000_000),
+    width: z.number().int().min(16).max(2400),
+    height: z.number().int().min(16).max(2400),
+    anchorX: z.number().min(0).max(1),
+    anchorY: z.number().min(0).max(1),
+    widthMm: z.number().min(2).max(600).nullable().optional(),
+    pair: z.boolean().default(false),
+    splitX: z.number().min(0.1).max(0.9).nullable().optional(),
+  }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "The cut-out couldn't be saved — try exporting again.", detail: body.error.flatten() });
+  const product = await prisma.product.findFirst({ where: { id: req.params.id, tenantId: p.tenantId } });
+  if (!product) return res.status(404).json({ error: "Product not found" });
+  const d = body.data;
+  const png = Buffer.from(d.png.slice("data:image/png;base64,".length), "base64");
+  if (png.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") return res.status(400).json({ error: "Not a PNG image" });
+  const saved = await prisma.tryOnAsset.upsert({
+    where: { productId: product.id },
+    create: { productId: product.id, png, width: d.width, height: d.height },
+    update: { png, width: d.width, height: d.height },
+  });
+  const url = assetUrlFor(product.id, { v: saved.updatedAt.getTime(), ax: d.anchorX, ay: d.anchorY, mm: d.widthMm, pair: d.pair, sx: d.splitX });
+  await prisma.productMedia.deleteMany({ where: { productId: product.id, kind: { startsWith: "tryon" } } });
+  await prisma.productMedia.create({ data: { productId: product.id, kind: `tryon:${d.type}`, url, isPrimary: false, sort: 999 } });
+  await audit({ tenantId: p.tenantId, userId: p.sub, action: "product.tryon_asset", entity: "Product", entityId: product.id, meta: { type: d.type, bytes: png.length } });
+  res.json({ assetUrl: url });
+});
+
+productRouter.delete("/:id/tryon-asset", editors, async (req, res) => {
+  const p = req.principal!;
+  const product = await prisma.product.findFirst({ where: { id: req.params.id, tenantId: p.tenantId }, include: { media: true } });
+  if (!product) return res.status(404).json({ error: "Product not found" });
+  await prisma.tryOnAsset.deleteMany({ where: { productId: product.id } });
+  const row = product.media.find((m) => m.kind.startsWith("tryon") && m.url.startsWith("/api/public/tryon-assets/"));
+  if (row) await prisma.productMedia.update({ where: { id: row.id }, data: { url: "auto" } });
+  res.json({ ok: true });
+});

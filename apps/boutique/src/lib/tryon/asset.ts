@@ -7,6 +7,7 @@
  */
 import type { TryOnType } from "./engine";
 import { renderLikeness, type Fit } from "./render";
+import { API_URL } from "@/lib/api";
 
 export interface Asset {
   src: string;           // image URL or data URL with transparency
@@ -29,7 +30,7 @@ const PHOTO_FIT: Record<TryOnType, Fit> = {
 interface PieceLike {
   name: string; metalColor: string; stoneType?: string | null; tags?: string[];
   category?: { slug: string } | null; image: string | null;
-  tryOn?: { type: TryOnType; assetUrl: string | null } | null;
+  tryOn?: { type: TryOnType; assetUrl: string | null; anchor?: { x: number; y: number } | null; widthMm?: number | null; pair?: boolean; splitX?: number | null } | null;
 }
 
 /** Best available overlay: staff cut-out → auto cut-out of a plain-background photo → rendered likeness. */
@@ -38,8 +39,11 @@ export async function assetFor(p: PieceLike): Promise<Asset | null> {
   if (!t) return null;
   const fit = PHOTO_FIT[t.type];
   if (t.assetUrl) {
-    const a = await prepareAsset(t.assetUrl, true, t.type === "earrings");
-    if (a) return { ...a, fit, source: "staff" };
+    // Studio cut-outs are served by our API (relative path) and carry anchor/size/split metadata.
+    const url = t.assetUrl.startsWith("/") ? `${API_URL}${t.assetUrl}` : t.assetUrl;
+    const studio = t.assetUrl.startsWith("/api/public/tryon-assets/");
+    const a = await prepareAsset(url, true, t.type === "earrings", studio ? { pair: !!t.pair, splitX: t.splitX ?? 0.5 } : undefined);
+    if (a) return { ...a, fit: studio ? { anchor: "center", k: 1, anchorPt: t.anchor ?? null, widthMm: t.widthMm ?? null } : fit, source: "staff" };
   }
   if (p.image) {
     const a = await prepareAsset(p.image, false, t.type === "earrings");
@@ -65,14 +69,14 @@ function canvasOf(w: number, h: number) {
   return c;
 }
 
-function split(img: CanvasImageSource, w: number, h: number): [string, string] {
-  const half = Math.floor(w / 2);
-  const make = (sx: number) => {
-    const c = canvasOf(half, h);
-    c.getContext("2d")!.drawImage(img, sx, 0, half, h, 0, 0, half, h);
+function split(img: CanvasImageSource, w: number, h: number, at = 0.5): [string, string] {
+  const left = Math.max(1, Math.round(w * at)), right = Math.max(1, w - left);
+  const make = (sx: number, sw: number) => {
+    const c = canvasOf(sw, h);
+    c.getContext("2d")!.drawImage(img, sx, 0, sw, h, 0, 0, sw, h);
     return c.toDataURL("image/png");
   };
-  return [make(0), make(w - half)];
+  return [make(0, left), make(left, right)];
 }
 
 /** Flood-fill a uniform background from the border and make it transparent. */
@@ -138,11 +142,18 @@ function cutout(img: HTMLImageElement): { url: string; w: number; h: number } | 
 
 type Prepared = Omit<Asset, "fit" | "source">;
 
-export async function prepareAsset(url: string, fromStaff: boolean, splitPair: boolean): Promise<Prepared | null> {
+export async function prepareAsset(url: string, fromStaff: boolean, splitPair: boolean, studio?: { pair: boolean; splitX: number }): Promise<Prepared | null> {
   let img: HTMLImageElement;
   let cors = true;
   try { img = await load(url, true); } catch {
     try { img = await load(url, false); cors = false; } catch { return null; }
+  }
+  if (studio) {
+    const aspect = img.naturalWidth / img.naturalHeight;
+    if (!studio.pair) return { src: url, aspect, exportable: cors };
+    if (!cors) return null; // can't split a pair without pixel access → fall back to the photo/likeness
+    const halves = split(img, img.naturalWidth, img.naturalHeight, studio.splitX);
+    return { src: halves[0], aspect: aspect * studio.splitX, halves, exportable: true };
   }
   if (fromStaff) {
     const aspect = img.naturalWidth / img.naturalHeight;

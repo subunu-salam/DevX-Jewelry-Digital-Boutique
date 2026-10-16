@@ -10,8 +10,10 @@ import { api } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { useStore } from "@/context/store";
 import { EASE, JewelImage, LuxuryButton, Modal, Price, t, useToast } from "@/design";
-import { LABEL, TIPS, defaults, detect, lerp, needs, place, preload, type FitSpec, type Placement, type TryOnType } from "@/lib/tryon/engine";
+import { LABEL, TIPS, defaults, detect, needs, place, preload, smoother, swing, type FitSpec, type Placement, type TryOnType } from "@/lib/tryon/engine";
 import { assetFor, toJpeg, type Asset } from "@/lib/tryon/asset";
+import { specFromProduct } from "@/lib/jewel3d/spec";
+import type { RingAR } from "@/lib/jewel3d/ar";
 
 const DISCLAIMER = "Virtual try-on is a visualization only. Size, fit, colour and sparkle may differ from the actual piece.";
 
@@ -96,6 +98,16 @@ function Studio({ slug }: { slug: string }) {
   const [status, setStatus] = useState<"idle" | "detecting" | "placed" | "manual">("idle");
   const [adj, setAdj] = useState<Adjust>(NO_ADJ);
   const [compare, setCompare] = useState(false);
+  /** Scene brightness (live camera) so the metal isn't glowing in a dim room. */
+  const [light, setLight] = useState(1);
+  /** 3D AR for rings & bangles (real 3D model on the finger/wrist, with finger occlusion). */
+  const spec3d = useMemo(() => (product ? specFromProduct(product) : null), [product]);
+  const [use3d, setUse3d] = useState(true);
+  const can3d = !!spec3d && (spec3d.kind === "ring" || spec3d.kind === "bangle") && (product?.tryOn?.type === "ring" || product?.tryOn?.type === "bracelet");
+  const show3d = can3d && use3d && (phase === "live" || phase === "photo");
+  const show3dRef = useRef(show3d); show3dRef.current = show3d;
+  const arCanvas = useRef<HTMLCanvasElement>(null);
+  const arRef = useRef<RingAR | null>(null);
 
   const [consentOpen, setConsentOpen] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
@@ -133,7 +145,29 @@ function Studio({ slug }: { slug: string }) {
 
   /* ── Photo: detect once, re-place whenever the piece changes ── */
   const imgRef = useRef<HTMLImageElement>(null);
-  const lmsRef = useRef<{ kind: "face" | "hand"; pts: { x: number; y: number }[] | null; W: number; H: number } | null>(null);
+  const lmsRef = useRef<{ kind: string; pts: { x: number; y: number }[] | null; W: number; H: number } | null>(null);
+
+  /* 3D AR renderer — created when a ring/bangle is shown in 3D, disposed when leaving */
+  const spec3dKey = spec3d ? JSON.stringify(spec3d) : "";
+  useEffect(() => {
+    if (!show3d || !spec3d) return;
+    let alive = true;
+    import("@/lib/jewel3d/ar").then(({ createRingAR }) => {
+      if (!alive || !arCanvas.current) return;
+      try {
+        arRef.current = createRingAR(arCanvas.current, spec3d);
+        const l = lmsRef.current;
+        if (phase === "photo" && l?.pts) arRef.current.update(l.pts, l.W, l.H);
+      } catch { setUse3d(false); }
+    }).catch(() => setUse3d(false));
+    return () => { alive = false; arRef.current?.dispose(); arRef.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show3d, spec3dKey, phase]);
+  /* photo: re-place the 3D ring whenever detection updates */
+  useEffect(() => {
+    const l = lmsRef.current;
+    if (show3d && phase === "photo" && arRef.current && l) arRef.current.update(l.pts, l.W, l.H);
+  }, [auto, show3d, phase]);
 
   const detectPhoto = useCallback(async () => {
     const img = imgRef.current, t = typeRef.current, f = fitRef.current;
@@ -220,21 +254,46 @@ function Studio({ slug }: { slug: string }) {
   useEffect(() => {
     if (phase !== "live") return;
     let raf = 0, last = -1, stopped = false;
-    let smooth: Placement[] | null = null, smoothKey = "";
+    let smoothKey = "", smooth = smoother(), frames = 0;
+    // Earring sway: a damped pendulum driven by how fast the head moves sideways.
+    let sway: { a: number; w: number; px: number }[] = [], lastT = performance.now() / 1000;
+    const probe = document.createElement("canvas"); probe.width = 32; probe.height = 24;
+    const pctx = probe.getContext("2d", { willReadFrequently: true });
     setStatus("detecting");
     const loop = async () => {
       if (stopped) return;
       const v = videoRef.current, t = typeRef.current, f = fitRef.current;
       if (v && t && f && v.readyState >= 2 && v.currentTime !== last) {
         last = v.currentTime;
+        const now = performance.now() / 1000, dt = Math.min(0.1, Math.max(0.001, now - lastT)); lastT = now;
+        // Sample scene brightness a few times a second.
+        if (pctx && frames++ % 12 === 0) {
+          try {
+            pctx.drawImage(v, 0, 0, 32, 24);
+            const px = pctx.getImageData(8, 4, 16, 16).data;
+            let y = 0; for (let i = 0; i < px.length; i += 4) y += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+            const lum = y / (px.length / 4) / 255;
+            setLight((l) => l + (Math.min(1.12, Math.max(0.68, 0.55 + lum * 0.9)) - l) * 0.4);
+          } catch { /* ignore */ }
+        }
         try {
           const pts = await detect(t, v, "VIDEO", performance.now());
+          if (show3dRef.current && arRef.current && !stopped) arRef.current.update(pts, v.videoWidth, v.videoHeight);
           if (pts && !stopped) {
-            const key = `${t}:${f.anchor}:${f.k}:${f.aspect}`;
-            const next = place(t, pts, v.videoWidth, v.videoHeight, f);
-            smooth = key === smoothKey ? lerp(smooth, next) : next;
-            smoothKey = key;
-            setAuto({ items: smooth, detected: true });
+            const key = `${t}:${f.anchor}:${f.k}:${f.aspect}:${f.widthMm ?? ""}`;
+            if (key !== smoothKey) { smooth = smoother(); sway = []; smoothKey = key; }
+            let items = smooth(place(t, pts, v.videoWidth, v.videoHeight, f), now);
+            if (t === "earrings" || t === "pendant") {
+              items = items.map((p, i) => {
+                const s0 = (sway[i] ??= { a: 0, w: 0, px: p.cx });
+                const vx = (p.cx - s0.px) / dt; s0.px = p.cx;
+                // spring back (k), damping (c), and a kick from sideways head motion
+                const acc = -90 * s0.a - 7 * s0.w - vx * 900;
+                s0.w += acc * dt; s0.a = Math.max(-18, Math.min(18, s0.a + s0.w * dt));
+                return swing(p, s0.a, v.videoWidth, v.videoHeight, f.aspect);
+              });
+            }
+            setAuto({ items, detected: true });
             setStatus("placed");
           } else if (!stopped) {
             setStatus((s) => (s === "placed" ? "detecting" : s));
@@ -295,7 +354,17 @@ function Studio({ slug }: { slug: string }) {
 
   /* ── Compose a shareable image (photo + piece + visualization watermark) ── */
   async function compose(): Promise<string | null> {
-    if (!photo || !auto || !asset || asset === "loading") return null;
+    if (!photo) return null;
+    if (show3d && arRef.current) {
+      const load3 = (src: string) => new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+      const [base, ov] = await Promise.all([load3(photo.url), load3(arRef.current.snapshot())]);
+      const c = document.createElement("canvas"); c.width = base.naturalWidth; c.height = base.naturalHeight;
+      const ctx = c.getContext("2d")!;
+      ctx.drawImage(base, 0, 0); ctx.drawImage(ov, 0, 0, c.width, c.height);
+      watermark(ctx, c.width, c.height);
+      return c.toDataURL("image/jpeg", 0.92);
+    }
+    if (!auto || !asset || asset === "loading") return null;
     if (!asset.exportable) { toast({ title: "Saving isn't available for this piece", body: "Take a screenshot instead." }); return null; }
     const load = (src: string) => new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); if (!src.startsWith("data:")) i.crossOrigin = "anonymous"; i.onload = () => res(i); i.onerror = rej; i.src = src; });
     const base = await load(photo.url);
@@ -312,7 +381,8 @@ function Studio({ slug }: { slug: string }) {
       ctx.translate((p.cx + adj.dx) * W, (p.cy + adj.dy) * H);
       ctx.rotate(((p.rot + adj.rot) * Math.PI) / 180);
       ctx.scale((adj.flip ? -1 : 1) * (i === 1 && !asset.halves ? -1 : 1), 1);
-      ctx.shadowColor = "rgba(0,0,0,.28)"; ctx.shadowBlur = w * 0.03; ctx.shadowOffsetY = w * 0.01;
+      ctx.globalAlpha = p.op ?? 1;
+      ctx.shadowColor = "rgba(40,20,10,.32)"; ctx.shadowBlur = w * 0.03; ctx.shadowOffsetY = w * 0.012;
       ctx.drawImage(img, -w / 2, -h / 2, w, h);
       ctx.restore();
     });
@@ -451,32 +521,44 @@ function Studio({ slug }: { slug: string }) {
                   <img ref={imgRef} src={photo.url} alt="Your photo" draggable={false} onLoad={() => { lmsRef.current = null; detectPhoto(); }} className="absolute inset-0 size-full" />
                 )}
                 <AnimatePresence>
-                  {ready && auto && !compare && asset && auto.items.map((p, i) => (
-                    <motion.img
-                      key={`${asset.src.slice(-24)}-${i}`}
-                      initial={{ opacity: 0, scale: 0.85 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.35, ease: EASE }}
-                      src={asset.halves?.[i] ?? asset.src}
-                      alt=""
-                      draggable={false}
-                      className="pointer-events-none absolute max-w-none"
-                      style={{
-                        left: `${(p.cx + adj.dx) * 100}%`,
-                        top: `${(p.cy + adj.dy) * 100}%`,
-                        width: `${p.w * adj.scale * 100}%`,
-                        aspectRatio: `${asset.aspect}`,
-                        x: "-50%", y: "-50%",
-                        rotate: p.rot + adj.rot,
-                        scaleX: (adj.flip ? -1 : 1) * (i === 1 && !asset.halves ? -1 : 1),
-                        filter: "drop-shadow(0 2px 3px rgba(0,0,0,.3))",
-                      }}
-                    />
-                  ))}
+                  {ready && auto && !compare && asset && !show3d && auto.items.map((p, i) => {
+                    const src = asset.halves?.[i] ?? asset.src;
+                    const lit = phase === "live" ? light : 1;
+                    return (
+                      <motion.div
+                        key={`${asset.src.slice(-24)}-${i}`}
+                        initial={{ opacity: 0, scale: 0.85 }}
+                        animate={{ opacity: p.op ?? 1, scale: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.35, ease: EASE, opacity: { duration: 0.12 } }}
+                        className="pointer-events-none absolute"
+                        style={{
+                          left: `${(p.cx + adj.dx) * 100}%`,
+                          top: `${(p.cy + adj.dy) * 100}%`,
+                          width: `${p.w * adj.scale * 100}%`,
+                          aspectRatio: `${asset.aspect}`,
+                          x: "-50%", y: "-50%",
+                          rotate: p.rot + adj.rot,
+                          scaleX: (adj.flip ? -1 : 1) * (i === 1 && !asset.halves ? -1 : 1),
+                          // soft contact shadow + brightness matched to the room
+                          filter: `brightness(${lit.toFixed(3)}) drop-shadow(0 ${Math.max(1, p.w * 160).toFixed(1)}px ${Math.max(2, p.w * 220).toFixed(1)}px rgba(40,20,10,.35))`,
+                        }}
+                      >
+                        <img src={src} alt="" draggable={false} className="absolute inset-0 size-full max-w-none" />
+                        {/* moving glint, masked to the piece */}
+                        <span className="jewel-shine absolute inset-0" style={{ WebkitMaskImage: `url("${src}")`, maskImage: `url("${src}")`, WebkitMaskSize: "100% 100%", maskSize: "100% 100%", animationDelay: `${i * 0.6}s` }} />
+                      </motion.div>
+                    );
+                  })}
                 </AnimatePresence>
+                {show3d && !compare && <canvas ref={arCanvas} className="pointer-events-none absolute inset-0 size-full" />}
               </div>
 
+              {can3d && (
+                <button onClick={() => setUse3d((v) => !v)} className="absolute right-3 top-12 z-10 rounded-full bg-black/55 px-2.5 py-1 text-[10.5px] font-semibold text-white backdrop-blur">
+                  {use3d ? "3D ring ✓" : "Switch to 3D"}
+                </button>
+              )}
               <span className="absolute left-3 top-3 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white backdrop-blur">Visualization only</span>
               {asset === "loading" ? (
                 <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-surface/95 px-2.5 py-1 text-[10.5px] font-semibold"><Loader2 className="size-3 animate-spin text-brand-deep" /> Preparing piece…</span>

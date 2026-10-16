@@ -236,6 +236,7 @@ model Product {
   collection Collection?    @relation(fields: [collectionId], references: [id])
   media      ProductMedia[]
   inventory  Inventory[]
+  tryOnAsset TryOnAsset?
 
   @@unique([tenantId, sku])
   @@index([tenantId])
@@ -626,4 +627,17 @@ model GoldPlanPayment {
   plan GoldPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
 
   @@index([planId])
+}
+
+// Transparent try-on cut-out made in the CRM Try-on Studio. Served as a PNG by
+// /api/public/tryon-assets/:productId; its anchor/size metadata lives on the
+// product's "tryon:<type>" media row URL (see lib/tryon.ts).
+model TryOnAsset {
+  productId String   @id
+  png       Bytes
+  width     Int
+  height    Int
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
