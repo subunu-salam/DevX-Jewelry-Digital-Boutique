@@ -9,7 +9,10 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "src"),
       "@ui": path.resolve(__dirname, "../../packages/ui/src"),
+      // the shop's 3D jewellery code — the CRM builds and previews models with exactly the same engine
+      "@jewel3d": path.resolve(__dirname, "../boutique/src/lib/jewel3d"),
     },
+    dedupe: ["three"],
   },
   server: {
     port: 5174,

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { requireStaff, requireRole } from "../middleware/auth.js";
 import { audit } from "../lib/audit.js";
+import { downloadGlb, getTask, meshyEnabled, startImageTo3D } from "../lib/meshy.js";
 
 export const productRouter = Router();
 productRouter.use(requireStaff);
@@ -307,6 +308,7 @@ productRouter.put("/:id/model3d", editors, express.raw({ type: () => true, limit
     fileName: z.string().max(200).default("model.glb"),
     piece: z.coerce.number().int().min(0).max(20).default(0),
     mm: z.coerce.number().min(2).max(600).optional(),
+    source: z.enum(["upload", "photo"]).optional(),
   }).safeParse(req.query);
   if (!q.success) return res.status(400).json({ error: "Invalid model settings" });
   const glb = req.body as Buffer;
@@ -314,18 +316,67 @@ productRouter.put("/:id/model3d", editors, express.raw({ type: () => true, limit
     return res.status(400).json({ error: "Please upload a binary glTF (.glb) file" });
   const product = await prisma.product.findFirst({ where: { id: req.params.id, tenantId: p.tenantId } });
   if (!product) return res.status(404).json({ error: "Product not found" });
-  const saved = await prisma.model3DAsset.upsert({
-    where: { productId: product.id },
-    create: { productId: product.id, glb, fileName: q.data.fileName },
-    update: { glb, fileName: q.data.fileName },
-  });
-  const sp = new URLSearchParams({ v: String(saved.updatedAt.getTime()), piece: String(q.data.piece) });
-  if (q.data.mm) sp.set("mm", String(q.data.mm));
-  const url = `/api/public/models/${product.id}?${sp.toString()}`;
-  await prisma.productMedia.deleteMany({ where: { productId: product.id, kind: "model3d" } });
-  await prisma.productMedia.create({ data: { productId: product.id, kind: "model3d", url, isPrimary: false, sort: 998 } });
-  await audit({ tenantId: p.tenantId, userId: p.sub, action: "product.model3d", entity: "Product", entityId: product.id, meta: { bytes: glb.length, fileName: q.data.fileName } });
+  const url = await saveModel(product.id, glb, q.data);
+  await audit({ tenantId: p.tenantId, userId: p.sub, action: "product.model3d", entity: "Product", entityId: product.id, meta: { bytes: glb.length, fileName: q.data.fileName, source: q.data.source } });
   res.json({ model3d: url });
+});
+
+/** Store a .glb for a product and point its "model3d" media row at it. */
+async function saveModel(productId: string, glb: Buffer, o: { fileName: string; piece?: number; mm?: number; tex?: boolean; source?: string }) {
+  const saved = await prisma.model3DAsset.upsert({
+    where: { productId },
+    create: { productId, glb, fileName: o.fileName },
+    update: { glb, fileName: o.fileName },
+  });
+  const sp = new URLSearchParams({ v: String(saved.updatedAt.getTime()), piece: String(o.piece ?? 0) });
+  if (o.mm) sp.set("mm", String(o.mm));
+  if (o.tex) sp.set("tex", "1");
+  if (o.source) sp.set("src", o.source);
+  const url = `/api/public/models/${productId}?${sp.toString()}`;
+  await prisma.productMedia.deleteMany({ where: { productId, kind: "model3d" } });
+  await prisma.productMedia.create({ data: { productId, kind: "model3d", url, isPrimary: false, sort: 998 } });
+  return url;
+}
+
+/* ── Photo → 3D with AI (optional, MESHY_API_KEY) ──
+ * POST starts a job from the jewellery photo; GET polls it and, when done, stores the model
+ * exactly like an uploaded .glb so it appears in "View in 3D" and the 3D try-on. */
+productRouter.get("/ai-3d/config", (_req, res) => res.json({ enabled: meshyEnabled(), provider: meshyEnabled() ? "Meshy" : null }));
+
+productRouter.post("/:id/model3d/ai", editors, express.json({ limit: "16mb" }), async (req, res) => {
+  const p = req.principal!;
+  if (!meshyEnabled()) return res.status(503).json({ error: "AI 3D isn't set up — add MESHY_API_KEY on the server, or use the on-device photo-to-3D." });
+  const d = z.object({ image: z.string().refine((u) => /^data:image\/(png|jpe?g|webp);base64,/.test(u) || /^https:\/\//.test(u), "Send a PNG/JPEG data URL or https link").refine((u) => u.length < 15_000_000, "Image is too large") }).safeParse(req.body);
+  if (!d.success) return res.status(400).json({ error: d.error.issues[0]?.message ?? "Invalid image" });
+  const product = await prisma.product.findFirst({ where: { id: req.params.id, tenantId: p.tenantId } });
+  if (!product) return res.status(404).json({ error: "Product not found" });
+  try {
+    const taskId = await startImageTo3D(d.data.image);
+    await audit({ tenantId: p.tenantId, userId: p.sub, action: "product.model3d_ai_start", entity: "Product", entityId: product.id, meta: { taskId } });
+    res.status(202).json({ taskId });
+  } catch (e) { res.status(502).json({ error: (e as Error).message }); }
+});
+
+productRouter.get("/:id/model3d/ai/:taskId", editors, async (req, res) => {
+  const p = req.principal!;
+  if (!meshyEnabled()) return res.status(503).json({ error: "AI 3D isn't set up" });
+  const q = z.object({ mm: z.coerce.number().min(2).max(600).optional() }).safeParse(req.query);
+  const product = await prisma.product.findFirst({ where: { id: req.params.id, tenantId: p.tenantId }, include: { media: true } });
+  if (!product) return res.status(404).json({ error: "Product not found" });
+  try {
+    const t = await getTask(req.params.taskId);
+    if (t.status === "SUCCEEDED" && t.model_urls?.glb) {
+      // idempotent: the first poll that sees success stores it
+      const already = product.media.find((m) => m.kind === "model3d" && m.url.includes(`src=ai-${t.id.slice(0, 12)}`));
+      const url = already?.url ?? await saveModel(product.id, await downloadGlb(t.model_urls.glb), {
+        fileName: `${product.sku || "piece"}-ai.glb`, mm: q.success ? q.data.mm : undefined, tex: true, source: `ai-${t.id.slice(0, 12)}`,
+      });
+      if (!already) await audit({ tenantId: p.tenantId, userId: p.sub, action: "product.model3d", entity: "Product", entityId: product.id, meta: { source: "ai", taskId: t.id } });
+      return res.json({ status: "SUCCEEDED", progress: 100, model3d: url });
+    }
+    if (t.status === "FAILED" || t.status === "CANCELED") return res.json({ status: t.status, progress: t.progress ?? 0, error: t.task_error?.message || "The 3D service couldn't build this piece — try a clearer photo on a plain background." });
+    res.json({ status: t.status, progress: t.progress ?? 0 });
+  } catch (e) { res.status(502).json({ error: (e as Error).message }); }
 });
 
 productRouter.delete("/:id/model3d", editors, async (req, res) => {

@@ -20,8 +20,9 @@
     "paths": {
       "@/*": ["src/*"],
       "@ui": ["../../packages/ui/src"],
-      "@ui/*": ["../../packages/ui/src/*"]
+      "@ui/*": ["../../packages/ui/src/*"],
+      "@jewel3d/*": ["../boutique/src/lib/jewel3d/*"]
     }
   },
-  "include": ["src", "../../packages/ui/src"]
+  "include": ["src", "../../packages/ui/src", "../boutique/src/lib/jewel3d"]
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Box, Plus, Package, Star, Sparkles, Wand2 } from "lucide-react";
+import { Box, Camera, Plus, Package, Star, Sparkles, Wand2 } from "lucide-react";
 import Model3DUpload from "@/components/Model3DUpload";
+import Photo3DStudio from "@/components/Photo3DStudio";
 import TryOnStudio from "@/components/TryOnStudio";
 import { TYPE_DEFAULTS, autoMask, exportCut, loadImage, toWorking, type TryOnType } from "@/lib/cutout";
 import { api } from "@/lib/api";
@@ -27,6 +28,7 @@ export default function Catalog() {
   const [loading, setLoading] = useState(true);
   const [tryOnFor, setTryOnFor] = useState<ProductRow | null>(null);
   const [modelFor, setModelFor] = useState<ProductRow | null>(null);
+  const [photo3dFor, setPhoto3dFor] = useState<ProductRow | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -104,6 +106,9 @@ export default function Catalog() {
                       <Box className={r.model3d ? "size-3.5 text-primary" : "size-3.5 text-muted-foreground"} />
                       {r.model3d ? "3D ✓" : <span className="text-muted-foreground">3D</span>}
                     </button>
+                    <button onClick={() => setPhoto3dFor(r)} className="ml-1.5 inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs hover:bg-muted" title="Make a 3D model from a photo">
+                      <Camera className="size-3.5 text-primary" /> Photo → 3D
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -117,6 +122,7 @@ export default function Catalog() {
 
       <TryOnStudio product={tryOnFor} onClose={() => setTryOnFor(null)} onSaved={(m) => { setTryOnFor(null); setNotice(m); load(); }} />
       <Model3DUpload product={modelFor} onClose={() => setModelFor(null)} onSaved={(m) => { setModelFor(null); setNotice(m); load(); }} />
+      <Photo3DStudio product={photo3dFor} onClose={() => setPhoto3dFor(null)} onSaved={(m) => { setPhoto3dFor(null); setNotice(m); load(); }} />
       <BulkPrepare open={bulkOpen} rows={rows} onClose={() => { setBulkOpen(false); load(); }} />
 
       <ProductModal

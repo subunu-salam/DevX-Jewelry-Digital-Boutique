@@ -11,10 +11,27 @@ import type { Product } from "@/lib/types";
 import { API_URL } from "@/lib/api";
 import { useStore } from "@/context/store";
 import { EASE, JewelImage, LuxuryButton, Modal, Price, t, useToast } from "@/design";
-import { LABEL, TIPS, defaults, detect, needs, place, preload, smoother, swing, type FitSpec, type Placement, type TryOnType } from "@/lib/tryon/engine";
+import { LABEL, TIPS, defaults, detect, needs, needs3d, place, preload, smoother, swing, track, type FitSpec, type Placement, type Tracked, type TryOnType } from "@/lib/tryon/engine";
 import { assetFor, toJpeg, type Asset } from "@/lib/tryon/asset";
 import { specFromProduct } from "@/lib/jewel3d/spec";
-import type { JewelAR } from "@/lib/jewel3d/ar";
+import type { Fit as Fit3D, JewelAR } from "@/lib/jewel3d/ar";
+
+const FIT3D: Fit3D = { size: 1, height: 0, depth: 0, flip: false };
+
+/** Average brightness (0–1) and colour of a frame, for matching the piece to the room. */
+function sampleLight(src: CanvasImageSource, probe: HTMLCanvasElement): { lum: number; tint: [number, number, number] } | null {
+  const x = probe.getContext("2d", { willReadFrequently: true });
+  if (!x) return null;
+  try {
+    x.drawImage(src, 0, 0, probe.width, probe.height);
+    const d = x.getImageData(0, 0, probe.width, probe.height).data;
+    let r = 0, g = 0, b = 0;
+    for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+    const n = (d.length / 4) * 255;
+    r /= n; g /= n; b /= n;
+    return { lum: 0.2126 * r + 0.7152 * g + 0.0722 * b, tint: [r, g, b] };
+  } catch { return null; }
+}
 
 const DISCLAIMER = "Virtual try-on is a visualization only. Size, fit, colour and sparkle may differ from the actual piece.";
 
@@ -109,6 +126,10 @@ function Studio({ slug }: { slug: string }) {
   const show3dRef = useRef(show3d); show3dRef.current = show3d;
   const arCanvas = useRef<HTMLCanvasElement>(null);
   const arRef = useRef<JewelAR | null>(null);
+  const [fit3d, setFit3d] = useState<Fit3D>(FIT3D);
+  const fit3dRef = useRef(fit3d); fit3dRef.current = fit3d;
+  const lightRef = useRef<{ lum: number; tint: [number, number, number] } | null>(null);
+  const [tracking3d, setTracking3d] = useState<"idle" | "searching" | "tracking">("idle");
 
   const [consentOpen, setConsentOpen] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
@@ -137,6 +158,7 @@ function Studio({ slug }: { slug: string }) {
       setProduct(p);
       if (!p.tryOn) { setAsset(null); return; }
       preload(p.tryOn.type);
+      preload(p.tryOn.type, true);
       const a = await getAsset(p);
       if (alive) setAsset(a);
     }).catch(() => { if (alive) { setProduct(null); setAsset(null); } });
@@ -161,18 +183,35 @@ function Studio({ slug }: { slug: string }) {
       if (!alive || !arCanvas.current) return;
       try {
         arRef.current = createJewelAR(arCanvas.current, spec3d, jewel);
-        const l = lmsRef.current;
-        if (phase === "photo" && l?.pts) arRef.current.update(l.pts, l.W, l.H);
+        arRef.current.setFit(fit3dRef.current);
+        if (phase === "photo") run3dPhoto();
       } catch { setUse3d(false); }
     }).catch(() => setUse3d(false));
     return () => { alive = false; arRef.current?.dispose(); arRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show3d, spec3dKey, phase, product?.model3d]);
-  /* photo: re-place the 3D ring whenever detection updates */
-  useEffect(() => {
-    const l = lmsRef.current;
-    if (show3d && phase === "photo" && arRef.current && l) arRef.current.update(l.pts, l.W, l.H);
-  }, [auto, show3d, phase]);
+  /* 3D fit changes (sliders / flip) */
+  useEffect(() => { arRef.current?.setFit(fit3d); }, [fit3d]);
+
+  /* photo: detect for the 3D engine once per photo (face mesh / hand with world landmarks) */
+  const track3dRef = useRef<{ key: string; tr: Tracked | null } | null>(null);
+  const run3dPhoto = useCallback(async () => {
+    const img = imgRef.current, t = typeRef.current, ar = arRef.current;
+    if (!img || !t || !ar || !img.naturalWidth) return;
+    const key = `${img.src.length}:${img.src.slice(-32)}:${needs3d(t)}`;
+    let tr = track3dRef.current?.key === key ? track3dRef.current.tr : undefined;
+    if (tr === undefined) {
+      setTracking3d("searching");
+      try { tr = await track(needs3d(t), img, "IMAGE"); } catch { tr = null; }
+      track3dRef.current = { key, tr };
+      const probe = document.createElement("canvas"); probe.width = 24; probe.height = 24;
+      lightRef.current = sampleLight(img, probe);
+    }
+    if (arRef.current !== ar) return;
+    const ok = ar.update(tr, img.naturalWidth, img.naturalHeight, { still: true, ...(lightRef.current ?? {}) });
+    setTracking3d(ok ? "tracking" : "searching");
+  }, []);
+  useEffect(() => { if (show3d && phase === "photo") run3dPhoto(); }, [show3d, phase, photo, run3dPhoto]);
 
   const detectPhoto = useCallback(async () => {
     const img = imgRef.current, t = typeRef.current, f = fitRef.current;
@@ -204,6 +243,8 @@ function Studio({ slug }: { slug: string }) {
     lmsRef.current = null;
     setAuto(null);
     setAdj(NO_ADJ);
+    setFit3d(FIT3D);
+    track3dRef.current = null;
     setPhoto(j);
     setAiResult(null);
     setPhase("photo");
@@ -262,7 +303,7 @@ function Studio({ slug }: { slug: string }) {
     let smoothKey = "", smooth = smoother(), frames = 0;
     // Earring sway: a damped pendulum driven by how fast the head moves sideways.
     let sway: { a: number; w: number; px: number }[] = [], lastT = performance.now() / 1000;
-    const probe = document.createElement("canvas"); probe.width = 32; probe.height = 24;
+    const probe = document.createElement("canvas"); probe.width = 24; probe.height = 18;
     const pctx = probe.getContext("2d", { willReadFrequently: true });
     setStatus("detecting");
     const loop = async () => {
@@ -271,19 +312,29 @@ function Studio({ slug }: { slug: string }) {
       if (v && t && f && v.readyState >= 2 && v.currentTime !== last) {
         last = v.currentTime;
         const now = performance.now() / 1000, dt = Math.min(0.1, Math.max(0.001, now - lastT)); lastT = now;
-        // Sample scene brightness a few times a second.
+        // Sample scene brightness and colour a few times a second.
         if (pctx && frames++ % 12 === 0) {
+          const s = sampleLight(v, probe);
+          if (s) {
+            const prev = lightRef.current;
+            lightRef.current = prev ? { lum: prev.lum + (s.lum - prev.lum) * 0.3, tint: prev.tint.map((c, k) => c + (s.tint[k] - c) * 0.3) as [number, number, number] } : s;
+            setLight((l) => l + (Math.min(1.12, Math.max(0.68, 0.55 + s.lum * 0.9)) - l) * 0.4);
+          }
+        }
+        // 3D: metric tracking straight into the 3D engine (no 2D work needed)
+        if (show3dRef.current && arRef.current) {
           try {
-            pctx.drawImage(v, 0, 0, 32, 24);
-            const px = pctx.getImageData(8, 4, 16, 16).data;
-            let y = 0; for (let i = 0; i < px.length; i += 4) y += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
-            const lum = y / (px.length / 4) / 255;
-            setLight((l) => l + (Math.min(1.12, Math.max(0.68, 0.55 + lum * 0.9)) - l) * 0.4);
-          } catch { /* ignore */ }
+            const tr = await track(needs3d(t), v, "VIDEO", performance.now());
+            if (!stopped && arRef.current) {
+              const ok = arRef.current.update(tr, v.videoWidth, v.videoHeight, lightRef.current ?? undefined);
+              setTracking3d(ok ? "tracking" : "searching");
+            }
+          } catch { setTracking3d("searching"); }
+          raf = requestAnimationFrame(loop);
+          return;
         }
         try {
           const pts = await detect(t, v, "VIDEO", performance.now());
-          if (show3dRef.current && arRef.current && !stopped) arRef.current.update(pts, v.videoWidth, v.videoHeight);
           if (pts && !stopped) {
             const key = `${t}:${f.anchor}:${f.k}:${f.aspect}:${f.widthMm ?? ""}`;
             if (key !== smoothKey) { smooth = smoother(); sway = []; smoothKey = key; }
@@ -567,7 +618,7 @@ function Studio({ slug }: { slug: string }) {
               <span className="absolute left-3 top-3 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white backdrop-blur">Visualization only</span>
               {asset === "loading" ? (
                 <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-surface/95 px-2.5 py-1 text-[10.5px] font-semibold"><Loader2 className="size-3 animate-spin text-brand-deep" /> Preparing piece…</span>
-              ) : <StatusChip status={status} overlayReady={ready} live={phase === "live"} />}
+              ) : show3d ? <Status3D state={tracking3d} live={phase === "live"} hand={handFirst} /> : <StatusChip status={status} overlayReady={ready} live={phase === "live"} />}
               {ready && asset.source === "likeness" && (
                 <span className="absolute bottom-3 left-3 rounded-full bg-black/45 px-2.5 py-1 text-[10px] font-medium text-white/90 backdrop-blur" style={{ bottom: phase === "live" ? 96 : 12 }}>Rendered likeness</span>
               )}
@@ -586,8 +637,28 @@ function Studio({ slug }: { slug: string }) {
             {/* Switch pieces without leaving the camera */}
             <div className="mt-4">{rail}</div>
 
-            {/* Adjust */}
-            {ready && (
+            {/* Adjust — 3D */}
+            {show3d && (
+              <div className="mt-4 rounded-[20px] border border-border bg-surface p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12.5px] font-semibold">Fine-tune the fit</span>
+                  <span className="text-[11px] text-muted-foreground">Real 3D · follows you</span>
+                </div>
+                <Slider label="Size" min={0.7} max={1.4} step={0.01} value={fit3d.size} onChange={(v) => setFit3d((f) => ({ ...f, size: v }))} />
+                {tType !== "ring" && <Slider label={handFirst ? "Position" : "Height"} min={-1.5} max={1.5} step={0.05} value={fit3d.height} onChange={(v) => setFit3d((f) => ({ ...f, height: v }))} />}
+                <Slider label={tType === "ring" ? "Position" : "Depth"} min={-1.5} max={1.5} step={0.05} value={fit3d.depth} onChange={(v) => setFit3d((f) => ({ ...f, depth: v }))} />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Chip onClick={() => setFit3d(FIT3D)}><RotateCcw className="size-3.5" /> Reset</Chip>
+                  <Chip onPointerDown={() => setCompare(true)} onPointerUp={() => setCompare(false)} onPointerLeave={() => setCompare(false)}>Hold to compare</Chip>
+                  {handFirst && <Chip onClick={() => setFit3d((f) => ({ ...f, flip: !f.flip }))}><FlipHorizontal2 className="size-3.5" /> Palm / back</Chip>}
+                  {phase === "photo" && liveSupported && <Chip onClick={() => startCamera(handFirst ? "environment" : "user")}><Video className="size-3.5" /> Go live</Chip>}
+                  {phase === "photo" && <Chip onClick={() => setPhase("choose")}><RefreshCw className="size-3.5" /> New photo</Chip>}
+                </div>
+              </div>
+            )}
+
+            {/* Adjust — 2D overlay */}
+            {ready && !show3d && (
               <div className="mt-4 rounded-[20px] border border-border bg-surface p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-[12.5px] font-semibold">Adjust the fit</span>
@@ -757,6 +828,16 @@ function StatusChip({ status, overlayReady, live }: { status: string; overlayRea
   return (
     <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-surface/95 px-2.5 py-1 text-[10.5px] font-semibold text-foreground">
       {status === "detecting" ? <Loader2 className="size-3 animate-spin text-brand-deep" /> : <span className={cn("size-1.5 rounded-full", status === "placed" ? "bg-ok" : "bg-brand")} />}
+      {text}
+    </span>
+  );
+}
+
+function Status3D({ state, live, hand }: { state: "idle" | "searching" | "tracking"; live: boolean; hand: boolean }) {
+  const text = state === "tracking" ? (live ? "Tracking in 3D" : "Placed in 3D") : state === "searching" ? (hand ? "Show your hand" : "Face the camera") : "Starting 3D…";
+  return (
+    <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-surface/95 px-2.5 py-1 text-[10.5px] font-semibold text-foreground">
+      {state === "tracking" ? <span className="size-1.5 rounded-full bg-ok" /> : <Loader2 className="size-3 animate-spin text-brand-deep" />}
       {text}
     </span>
   );

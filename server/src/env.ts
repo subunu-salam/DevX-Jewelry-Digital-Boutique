@@ -26,6 +26,8 @@ export const env = {
   GOLDAPI_KEY: process.env.GOLDAPI_KEY ?? "",
   METALSDEV_KEY: process.env.METALSDEV_KEY ?? "",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
+  // Optional AI image-to-3D for the CRM's "Photo → 3D" (https://www.meshy.ai). Empty = on-device only.
+  MESHY_API_KEY: process.env.MESHY_API_KEY ?? "",
   // Instagram / Meta ads (Marketing Analytics). Leave empty to show sample data.
   META_ACCESS_TOKEN: process.env.META_ACCESS_TOKEN ?? "",
   META_AD_ACCOUNT_ID: (process.env.META_AD_ACCOUNT_ID ?? "").replace(/^act_/, ""),

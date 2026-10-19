@@ -22,7 +22,7 @@ const MODELS = {
   hand: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
   pose: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
 };
-type Kind = keyof typeof MODELS;
+export type Kind = keyof typeof MODELS;
 
 /** Which body model a piece needs. Necklaces use the body (shoulders + neck); earrings the face mesh. */
 export const needs = (t: TryOnType): Kind => (t === "ring" || t === "bracelet" ? "hand" : t === "necklace" || t === "pendant" ? "pose" : "face");
@@ -50,7 +50,38 @@ function landmarker(kind: Kind) {
 }
 
 /** Warm the model in the background so detection feels instant. */
-export function preload(type: TryOnType) { landmarker(needs(type)).catch(() => {}); }
+export function preload(type: TryOnType, threeD = false) { landmarker(threeD ? needs3d(type) : needs(type)).catch(() => {}); }
+
+/**
+ * The 3D try-on works in real camera space, so it needs the face mesh (iris → metric depth) for
+ * necklaces too — it is far more stable than body pose in close selfies.
+ */
+export const needs3d = (t: TryOnType): Kind => (t === "ring" || t === "bracelet" ? "hand" : "face");
+
+export interface Lm3 { x: number; y: number; z: number; visibility?: number }
+/** Everything the 3D engine needs from one frame. */
+export interface Tracked {
+  kind: Kind;
+  lms: Lm3[];
+  /** hands: metric 3D landmarks (metres, hand-centred) */
+  world?: Lm3[] | null;
+  /** hands: MediaPipe's label (assumes a mirrored image, so it tells the chirality as seen) */
+  handed?: "Left" | "Right" | null;
+}
+
+/** Full detection result for the 3D engine. */
+export async function track(kind: Kind, source: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement, mode: Mode, ts = performance.now()): Promise<Tracked | null> {
+  const entry = await landmarker(kind);
+  if (entry.mode !== mode) { await entry.lm.setOptions({ runningMode: mode }); entry.mode = mode; }
+  const r = mode === "VIDEO" ? entry.lm.detectForVideo(source, ts) : entry.lm.detect(source);
+  const lms = (kind === "face" ? r?.faceLandmarks : r?.landmarks)?.[0];
+  if (!lms) return null;
+  return {
+    kind, lms,
+    world: kind === "hand" ? r?.worldLandmarks?.[0] ?? null : null,
+    handed: kind === "hand" ? (r?.handedness?.[0]?.[0]?.categoryName ?? r?.handednesses?.[0]?.[0]?.categoryName ?? null) : null,
+  };
+}
 
 /** Detect landmarks on an <img>, <canvas> or <video>. Returns null when nothing is found. */
 export async function detect(type: TryOnType, source: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement, mode: Mode, ts = performance.now()): Promise<Pt[] | null> {
