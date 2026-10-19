@@ -192,3 +192,22 @@ devx-boutique-os/
   scoping, role checks, bcrypt hashing, JWT expiry, audit log on sensitive actions,
   configurable CORS.
 - Built with **DevX Boutique OS** · *Aurelia Fine Jewellery* demo tenant.
+
+## 3D virtual try-on & Photo → 3D
+
+**Try-on (shop, `/try-on/:slug`)** — real 3D in metric camera space (`apps/boutique/src/lib/jewel3d/ar.ts`):
+depth from the iris (faces) or MediaPipe world landmarks (hands); invisible head / neck / finger / wrist
+volumes hide what goes behind you and catch contact shadows; drops swing as a damped pendulum; One-Euro
+smoothing; palm-vs-back from hand chirality (with a "Palm / back" override); exposure and tint follow the room.
+Customers can fine-tune size / height / depth. Works on live camera and uploaded photos.
+
+**Photo → 3D (CRM → Catalog → "Photo → 3D")** — upload a photo of the piece:
+1. background removed (automatic, or AI cut-out), outline traced into vector paths;
+2. metal colour and stone colour detected;
+3. 3D built by one of:
+   - *From the photo (vector relief)* — pendants, earrings, necklaces: the vector outline becomes a solid,
+     domed piece in true mm with the photo on the front and polished metal back/sides;
+   - *3D CAD style* — rings, bangles (or anything): generated geometry from metal / stone / setting / cut;
+   - *AI full 3D* — when `MESHY_API_KEY` is set on the server, the cut-out is sculpted by Meshy into full geometry;
+4. preview with the shop's own loader + viewer, then **Publish** — the model is stored like an uploaded .glb
+   and immediately powers "View in 3D" and the 3D try-on on the shop.

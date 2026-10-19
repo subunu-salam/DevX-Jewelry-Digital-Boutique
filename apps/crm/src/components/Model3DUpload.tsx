@@ -26,8 +26,9 @@ export default function Model3DUpload({ product, onClose, onSaved }: { product: 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const isRing = /ring/i.test(product?.category ?? "") && !/earring/i.test(product?.category ?? "");
+  const isBangle = /bangle|bracelet|kada/i.test(product?.category ?? "");
 
-  useEffect(() => { setFile(null); setInfo(null); setPiece("0"); setMm(isRing ? "17.3" : ""); setErr(null); }, [product?.id, isRing]);
+  useEffect(() => { setFile(null); setInfo(null); setPiece("0"); setMm(isRing ? "17.3" : isBangle ? "58" : ""); setErr(null); }, [product?.id, isRing, isBangle]);
 
   async function pick(f: File | null) {
     setFile(f); setInfo(null); setErr(null);
@@ -40,7 +41,7 @@ export default function Model3DUpload({ product, onClose, onSaved }: { product: 
     if (!product || !file || !info) return;
     setBusy(true); setErr(null);
     try {
-      const q = new URLSearchParams({ fileName: file.name, piece });
+      const q = new URLSearchParams({ fileName: file.name, piece, source: "upload" });
       if (mm) q.set("mm", mm);
       const res = await fetch(`${API_URL}/api/crm/products/${product.id}/model3d?${q}`, {
         method: "PUT", body: info.buf,
@@ -92,8 +93,8 @@ export default function Model3DUpload({ product, onClose, onSaved }: { product: 
               {[0, 1, 2, 3].map((i) => <option key={i} value={i}>{i === 0 ? "1st (largest)" : `${i + 1}${["", "nd", "rd", "th"][i]}`} piece</option>)}
             </Select>
           </Field>
-          <Field label={isRing ? "Ring inner diameter (mm)" : "Piece length (mm, optional)"}>
-            <Input value={mm} onChange={setMm} placeholder={isRing ? "17.3" : "e.g. 30"} />
+          <Field label={isRing ? "Ring inner diameter (mm)" : isBangle ? "Bangle inner diameter (mm)" : "Piece length (mm, optional)"}>
+            <Input value={mm} onChange={setMm} placeholder={isRing ? "17.3" : isBangle ? "58" : "e.g. 30"} />
           </Field>
         </div>
         <p className="text-xs text-muted-foreground">Files with several pieces (e.g. a bridal set) are split automatically — pick which one this product is.</p>
