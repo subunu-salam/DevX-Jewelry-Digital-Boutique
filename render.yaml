@@ -35,6 +35,8 @@ services:
         sync: false # set to the two static-site URLs after first deploy
       - key: GOLD_PROVIDER
         value: gold-api
+      - key: MESHY_API_KEY
+        sync: false # optional: AI full 3D in the CRM "Photo → 3D" — leave empty to skip
 
   # ── Customer Digital Boutique (separate URL) ────────────────
   - type: web
