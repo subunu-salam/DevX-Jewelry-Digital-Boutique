@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, Check, Loader2, MessageCircle } from "lucide-react";
+import { Box, Camera, Check, Loader2, MessageCircle } from "lucide-react";
+import { Link } from "react-router-dom";
+import { handOffPhoto } from "./PhotoTo3D";
 import { ownerFetch, fileToDataUrl } from "@/lib/owner";
 import SubHeader from "@/components/SubHeader";
 import OwnerGate from "@/components/OwnerGate";
@@ -32,7 +34,7 @@ function Panel() {
   const [note, setNote] = useState<string | null>(null);
   const [branchId, setBranchId] = useState("");
   const [publishing, setPublishing] = useState(false);
-  const [done, setDone] = useState<{ sku: string; slug: string; wa: string } | null>(null);
+  const [done, setDone] = useState<{ sku: string; slug: string; wa: string; id?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -59,7 +61,7 @@ function Panel() {
     try {
       const sku = "AR-" + Math.floor(1000 + Math.random() * 9000);
       const catId = cats.find((c) => c.name === draft.category)?.id ?? cats[0]?.id ?? null;
-      await ownerFetch("/api/crm/products", {
+      const created = await ownerFetch<{ id: string }>("/api/crm/products", {
         method: "POST",
         body: JSON.stringify({
           sku, name: draft.suggestedName || "New Piece", description: draft.description,
@@ -71,7 +73,7 @@ function Panel() {
       });
       const slug = (draft.suggestedName || "piece").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
       const wa = "https://wa.me/?text=" + encodeURIComponent((draft.whatsappCard || draft.suggestedName) + "\n\nyourjeweller.ae/product/" + slug + "-" + sku.slice(3));
-      setDone({ sku, slug, wa });
+      setDone({ sku, slug, wa, id: created?.id });
     } catch (e) { setError((e as Error).message); }
     finally { setPublishing(false); }
   }
@@ -86,6 +88,11 @@ function Panel() {
         <a href={done.wa} target="_blank" rel="noopener" className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-brand py-3.5 text-sm font-semibold text-white">
           <MessageCircle className="size-4" /> Share on WhatsApp
         </a>
+        {done.id && (
+          <Link to={`/ai/photo-to-3d?product=${done.id}`} onClick={() => dataUrl && handOffPhoto(dataUrl)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-border py-3.5 text-sm font-semibold">
+            <Box className="size-4" /> Make it 3D &amp; try-on ready
+          </Link>
+        )}
       </div>
     );
   }

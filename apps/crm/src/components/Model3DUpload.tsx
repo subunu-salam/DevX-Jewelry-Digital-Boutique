@@ -68,6 +68,11 @@ export default function Model3DUpload({ product, onClose, onSaved }: { product: 
           Upload the piece's CAD model as a <b>.glb</b> (Rhino, Matrix, Blender, iJewel). Stones are detected and given a diamond finish,
           the metal gets the product's colour, and rings are sized to the finger automatically.
         </p>
+        <a href={`${import.meta.env.VITE_BOUTIQUE_URL ?? "http://localhost:5173"}/ai/photo-to-3d?product=${product?.id ?? ""}`} target="_blank" rel="noopener"
+          className="flex items-center justify-between rounded-xl border border-primary/40 bg-primary/5 px-3 py-2.5 text-sm hover:bg-primary/10">
+          <span><b>No CAD file?</b> Make the 3D model from a photo — cut-out, vector outline and 3D build, published straight to this piece.</span>
+          <span className="ml-3 shrink-0 font-semibold text-primary">Photo → 3D ↗</span>
+        </a>
         {product?.model3d && (
           <div className="flex items-center justify-between rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm">
             <span className="inline-flex items-center gap-2"><Box className="size-4 text-primary" /> A 3D model is live for this piece</span>

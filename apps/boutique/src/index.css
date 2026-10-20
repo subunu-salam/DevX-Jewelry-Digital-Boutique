@@ -182,4 +182,8 @@
   animation: jewel-shine 3.6s cubic-bezier(.45, 0, .2, 1) infinite;
 }
 @keyframes jewel-shine { 0% { background-position: 130% 0; } 55%, 100% { background-position: -30% 0; } }
+/* try-on guided scan sweep */
+.tryon-scanline { animation: tryon-scan 2.2s ease-in-out infinite; }
+@keyframes tryon-scan { 0%, 100% { top: 6%; } 50% { top: 92%; } }
+@media (prefers-reduced-motion: reduce) { .tryon-scanline { animation: none; top: 50%; } }
 @media (prefers-reduced-motion: reduce) { .jewel-shine { animation: none; opacity: 0; } }

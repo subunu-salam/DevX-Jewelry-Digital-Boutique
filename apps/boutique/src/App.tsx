@@ -14,6 +14,7 @@ import VisualSearch from "./pages/VisualSearch";
 import CatalogStudio from "./pages/CatalogStudio";
 import Intelligence from "./pages/Intelligence";
 import TryOn from "./pages/TryOn";
+import PhotoTo3D from "./pages/PhotoTo3D";
 
 /** Pages not yet redesigned keep a comfortable reading width on desktop. */
 const Narrow = ({ children }: { children: React.ReactNode }) => <div className="mx-auto w-full max-w-3xl md:px-8">{children}</div>;
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="/ai" element={<Narrow><AIStudio /></Narrow>} />
         <Route path="/ai/visual-search" element={<Narrow><VisualSearch /></Narrow>} />
         <Route path="/ai/catalog-studio" element={<Narrow><CatalogStudio /></Narrow>} />
+        <Route path="/ai/photo-to-3d" element={<Narrow><PhotoTo3D /></Narrow>} />
         <Route path="/ai/intelligence" element={<Narrow><Intelligence /></Narrow>} />
         <Route path="/try-on" element={<TryOn />} />
         <Route path="/try-on/:slug" element={<TryOn />} />

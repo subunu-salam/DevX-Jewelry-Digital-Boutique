@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowLeft, Camera, CalendarClock, Download, FlipHorizontal2, ImageUp, Loader2, Lock, RefreshCw,
-  RotateCcw, Share2, ShoppingBag, Sparkles, SwitchCamera, Video, Wand2,
+  RotateCcw, ScanFace, Share2, ShoppingBag, Sparkles, SwitchCamera, Video, Wand2,
 } from "lucide-react";
 import { cn } from "@ui";
 import { api } from "@/lib/api";
@@ -11,27 +11,11 @@ import type { Product } from "@/lib/types";
 import { API_URL } from "@/lib/api";
 import { useStore } from "@/context/store";
 import { EASE, JewelImage, LuxuryButton, Modal, Price, t, useToast } from "@/design";
-import { LABEL, TIPS, defaults, detect, needs, needs3d, place, preload, smoother, swing, track, type FitSpec, type Placement, type Tracked, type TryOnType } from "@/lib/tryon/engine";
+import { LABEL, TIPS, defaults, detect, needs, place, preload, smoother, swing, type FitSpec, type Placement, type TryOnType } from "@/lib/tryon/engine";
 import { assetFor, toJpeg, type Asset } from "@/lib/tryon/asset";
-import { specFromProduct } from "@/lib/jewel3d/spec";
-import type { Fit as Fit3D, JewelAR } from "@/lib/jewel3d/ar";
-
-const FIT3D: Fit3D = { size: 1, height: 0, depth: 0, flip: false };
-
-/** Average brightness (0–1) and colour of a frame, for matching the piece to the room. */
-function sampleLight(src: CanvasImageSource, probe: HTMLCanvasElement): { lum: number; tint: [number, number, number] } | null {
-  const x = probe.getContext("2d", { willReadFrequently: true });
-  if (!x) return null;
-  try {
-    x.drawImage(src, 0, 0, probe.width, probe.height);
-    const d = x.getImageData(0, 0, probe.width, probe.height).data;
-    let r = 0, g = 0, b = 0;
-    for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
-    const n = (d.length / 4) * 255;
-    r /= n; g /= n; b /= n;
-    return { lum: 0.2126 * r + 0.7152 * g + 0.0722 * b, tint: [r, g, b] };
-  } catch { return null; }
-}
+import { METALS, specFromProduct, type Metal } from "@/lib/jewel3d/spec";
+import { DEFAULT_FIT, type Fit } from "@/lib/jewel3d/ar";
+import type { LiveState, LiveTryOn } from "@/lib/tryon/live";
 
 const DISCLAIMER = "Virtual try-on is a visualization only. Size, fit, colour and sparkle may differ from the actual piece.";
 
@@ -124,12 +108,18 @@ function Studio({ slug }: { slug: string }) {
   const can3d = !!spec3d && !!product?.tryOn;
   const show3d = can3d && use3d && (phase === "live" || phase === "photo");
   const show3dRef = useRef(show3d); show3dRef.current = show3d;
-  const arCanvas = useRef<HTMLCanvasElement>(null);
-  const arRef = useRef<JewelAR | null>(null);
-  const [fit3d, setFit3d] = useState<Fit3D>(FIT3D);
-  const fit3dRef = useRef(fit3d); fit3dRef.current = fit3d;
-  const lightRef = useRef<{ lum: number; tint: [number, number, number] } | null>(null);
-  const [tracking3d, setTracking3d] = useState<"idle" | "searching" | "tracking">("idle");
+  /* 3D session (tracking + guided scan + renderer) and its controls */
+  const [arCanvas, setArCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null);
+  const liveRef = useRef<LiveTryOn | null>(null);
+  const [ls, setLs] = useState<LiveState | null>(null);
+  const fit3 = useRef<Fit>({ ...DEFAULT_FIT });
+  const [fitUi, setFitUi] = useState<Fit>(fit3.current);
+  const [flip, setFlip] = useState(false);
+  const [metal3, setMetal3] = useState<Metal | null>(null);
+  const [shot, setShot] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   const [consentOpen, setConsentOpen] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
@@ -158,7 +148,6 @@ function Studio({ slug }: { slug: string }) {
       setProduct(p);
       if (!p.tryOn) { setAsset(null); return; }
       preload(p.tryOn.type);
-      preload(p.tryOn.type, true);
       const a = await getAsset(p);
       if (alive) setAsset(a);
     }).catch(() => { if (alive) { setProduct(null); setAsset(null); } });
@@ -170,51 +159,47 @@ function Studio({ slug }: { slug: string }) {
   const imgRef = useRef<HTMLImageElement>(null);
   const lmsRef = useRef<{ kind: string; pts: { x: number; y: number }[] | null; W: number; H: number } | null>(null);
 
-  /* 3D AR renderer — created when a ring/bangle is shown in 3D, disposed when leaving */
+  /*
+   * 3D try-on session — metric face/hand tracking, guided scan, real 3D piece with occluders.
+   * Runs for both the live camera and an uploaded photo; recreated when the piece or the
+   * source changes (the scan result is kept for the whole visit).
+   */
   const spec3dKey = spec3d ? JSON.stringify(spec3d) : "";
+  const source3d = phase === "live" ? videoEl : phase === "photo" ? imgEl : null;
   useEffect(() => {
-    if (!show3d || !spec3d) return;
+    if (!show3d || !spec3d || !arCanvas || !source3d) return;
     let alive = true;
+    let sess: LiveTryOn | null = null;
     const model = product?.model3d;
     Promise.all([
-      import("@/lib/jewel3d/ar"),
+      import("@/lib/tryon/live"),
+      // the piece's real 3D model (CAD upload or Photo → 3D) when it has one, else the generated piece
       model ? import("@/lib/jewel3d/custom").then(({ loadProductModel }) => loadProductModel(model, API_URL, spec3d)).catch(() => null) : Promise.resolve(null),
-    ]).then(([{ createJewelAR }, jewel]) => {
-      if (!alive || !arCanvas.current) return;
+    ]).then(([{ LiveTryOn }, jewel]) => {
+      if (!alive) return;
       try {
-        arRef.current = createJewelAR(arCanvas.current, spec3d, jewel);
-        arRef.current.setFit(fit3dRef.current);
-        if (phase === "photo") run3dPhoto();
+        sess = new LiveTryOn(arCanvas, (s) => { if (!alive) return; setLs(s); if (s.note) setNote(s.note); });
+        sess.fit = fit3.current;
+        sess.flip = flip;
+        sess.setPiece(spec3d, jewel);
+        if (metal3) sess.setMetal(metal3);
+        liveRef.current = sess;
+        void sess.attach(source3d, phase === "photo");
       } catch { setUse3d(false); }
     }).catch(() => setUse3d(false));
-    return () => { alive = false; arRef.current?.dispose(); arRef.current = null; };
+    return () => { alive = false; sess?.dispose(); if (liveRef.current === sess) liveRef.current = null; setLs(null); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [show3d, spec3dKey, phase, product?.model3d]);
-  /* 3D fit changes (sliders / flip) */
-  useEffect(() => { arRef.current?.setFit(fit3d); }, [fit3d]);
-
-  /* photo: detect for the 3D engine once per photo (face mesh / hand with world landmarks) */
-  const track3dRef = useRef<{ key: string; tr: Tracked | null } | null>(null);
-  const run3dPhoto = useCallback(async () => {
-    const img = imgRef.current, t = typeRef.current, ar = arRef.current;
-    if (!img || !t || !ar || !img.naturalWidth) return;
-    const key = `${img.src.length}:${img.src.slice(-32)}:${needs3d(t)}`;
-    let tr = track3dRef.current?.key === key ? track3dRef.current.tr : undefined;
-    if (tr === undefined) {
-      setTracking3d("searching");
-      try { tr = await track(needs3d(t), img, "IMAGE"); } catch { tr = null; }
-      track3dRef.current = { key, tr };
-      const probe = document.createElement("canvas"); probe.width = 24; probe.height = 24;
-      lightRef.current = sampleLight(img, probe);
-    }
-    if (arRef.current !== ar) return;
-    const ok = ar.update(tr, img.naturalWidth, img.naturalHeight, { still: true, ...(lightRef.current ?? {}) });
-    setTracking3d(ok ? "tracking" : "searching");
-  }, []);
-  useEffect(() => { if (show3d && phase === "photo") run3dPhoto(); }, [show3d, phase, photo, run3dPhoto]);
+  }, [show3d, spec3dKey, product?.model3d, arCanvas, source3d, phase, photo?.url]);
+  useEffect(() => { if (liveRef.current) liveRef.current.flip = flip; }, [flip]);
+  useEffect(() => { if (note) { const id = setTimeout(() => setNote(null), 3200); return () => clearTimeout(id); } }, [note]);
+  useEffect(() => { setMetal3(null); }, [slug]);
+  const setFit = (k: keyof Fit, v: number) => { fit3.current[k] = v; setFitUi({ ...fit3.current }); };
+  const resetFit = () => { Object.assign(fit3.current, DEFAULT_FIT); setFitUi({ ...fit3.current }); };
+  const pickMetal = (m: Metal) => { setMetal3(m); liveRef.current?.setMetal(m); };
 
   const detectPhoto = useCallback(async () => {
     const img = imgRef.current, t = typeRef.current, f = fitRef.current;
+    if (show3dRef.current) return; // the 3D session does its own tracking
     if (!img || !t || !f || !img.naturalWidth) return;
     setStatus("detecting");
     const kind = needs(t);
@@ -226,7 +211,7 @@ function Studio({ slug }: { slug: string }) {
   }, []);
 
   useEffect(() => {
-    if (phase !== "photo" || !type || !fit) return;
+    if (phase !== "photo" || !type || !fit || show3d) return;
     const l = lmsRef.current;
     if (l && l.kind === needs(type)) {
       if (l.pts) { setAuto({ items: place(type, l.pts, l.W, l.H, fit), detected: true }); setStatus("placed"); }
@@ -235,7 +220,7 @@ function Studio({ slug }: { slug: string }) {
       detectPhoto();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, type, asset]);
+  }, [phase, type, asset, show3d]);
 
   async function usePhoto(dataUrl: string) {
     const j = await toJpeg(dataUrl, 1280);
@@ -243,8 +228,6 @@ function Studio({ slug }: { slug: string }) {
     lmsRef.current = null;
     setAuto(null);
     setAdj(NO_ADJ);
-    setFit3d(FIT3D);
-    track3dRef.current = null;
     setPhoto(j);
     setAiResult(null);
     setPhase("photo");
@@ -271,6 +254,7 @@ function Studio({ slug }: { slug: string }) {
   /** Connect the camera stream whenever the <video> element mounts (after the page transition). */
   const attachVideo = useCallback((v: HTMLVideoElement | null) => {
     videoRef.current = v;
+    setVideoEl(v);
     const s = streamRef.current;
     if (!v || !s || v.srcObject === s) return;
     v.srcObject = s;
@@ -298,12 +282,12 @@ function Studio({ slug }: { slug: string }) {
   }
 
   useEffect(() => {
-    if (phase !== "live") return;
+    if (phase !== "live" || show3d) return; // 3D has its own tracker (lib/tryon/live)
     let raf = 0, last = -1, stopped = false;
     let smoothKey = "", smooth = smoother(), frames = 0;
     // Earring sway: a damped pendulum driven by how fast the head moves sideways.
     let sway: { a: number; w: number; px: number }[] = [], lastT = performance.now() / 1000;
-    const probe = document.createElement("canvas"); probe.width = 24; probe.height = 18;
+    const probe = document.createElement("canvas"); probe.width = 32; probe.height = 24;
     const pctx = probe.getContext("2d", { willReadFrequently: true });
     setStatus("detecting");
     const loop = async () => {
@@ -312,26 +296,15 @@ function Studio({ slug }: { slug: string }) {
       if (v && t && f && v.readyState >= 2 && v.currentTime !== last) {
         last = v.currentTime;
         const now = performance.now() / 1000, dt = Math.min(0.1, Math.max(0.001, now - lastT)); lastT = now;
-        // Sample scene brightness and colour a few times a second.
+        // Sample scene brightness a few times a second.
         if (pctx && frames++ % 12 === 0) {
-          const s = sampleLight(v, probe);
-          if (s) {
-            const prev = lightRef.current;
-            lightRef.current = prev ? { lum: prev.lum + (s.lum - prev.lum) * 0.3, tint: prev.tint.map((c, k) => c + (s.tint[k] - c) * 0.3) as [number, number, number] } : s;
-            setLight((l) => l + (Math.min(1.12, Math.max(0.68, 0.55 + s.lum * 0.9)) - l) * 0.4);
-          }
-        }
-        // 3D: metric tracking straight into the 3D engine (no 2D work needed)
-        if (show3dRef.current && arRef.current) {
           try {
-            const tr = await track(needs3d(t), v, "VIDEO", performance.now());
-            if (!stopped && arRef.current) {
-              const ok = arRef.current.update(tr, v.videoWidth, v.videoHeight, lightRef.current ?? undefined);
-              setTracking3d(ok ? "tracking" : "searching");
-            }
-          } catch { setTracking3d("searching"); }
-          raf = requestAnimationFrame(loop);
-          return;
+            pctx.drawImage(v, 0, 0, 32, 24);
+            const px = pctx.getImageData(8, 4, 16, 16).data;
+            let y = 0; for (let i = 0; i < px.length; i += 4) y += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+            const lum = y / (px.length / 4) / 255;
+            setLight((l) => l + (Math.min(1.12, Math.max(0.68, 0.55 + lum * 0.9)) - l) * 0.4);
+          } catch { /* ignore */ }
         }
         try {
           const pts = await detect(t, v, "VIDEO", performance.now());
@@ -363,11 +336,16 @@ function Studio({ slug }: { slug: string }) {
     };
     loop();
     return () => { stopped = true; cancelAnimationFrame(raf); };
-  }, [phase]);
+  }, [phase, show3d]);
 
   function capture() {
     const v = videoRef.current;
     if (!v) return;
+    if (show3d && liveRef.current && product) {
+      // keep the camera running; show the composited photo (camera + 3D piece) in a sheet
+      const url = liveRef.current.capture(facing === "user", product.name);
+      if (url) { setShot(url); return; }
+    }
     const c = document.createElement("canvas");
     c.width = v.videoWidth; c.height = v.videoHeight;
     const ctx = c.getContext("2d")!;
@@ -381,7 +359,7 @@ function Studio({ slug }: { slug: string }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ dist: number; ang: number } | null>(null);
-  const editable = phase === "photo" && !!asset && asset !== "loading";
+  const editable = phase === "photo" && !!asset && asset !== "loading" && !show3d;
   function pd(e: React.PointerEvent) {
     if (!editable) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -411,15 +389,7 @@ function Studio({ slug }: { slug: string }) {
   /* ── Compose a shareable image (photo + piece + visualization watermark) ── */
   async function compose(): Promise<string | null> {
     if (!photo) return null;
-    if (show3d && arRef.current) {
-      const load3 = (src: string) => new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
-      const [base, ov] = await Promise.all([load3(photo.url), load3(arRef.current.snapshot())]);
-      const c = document.createElement("canvas"); c.width = base.naturalWidth; c.height = base.naturalHeight;
-      const ctx = c.getContext("2d")!;
-      ctx.drawImage(base, 0, 0); ctx.drawImage(ov, 0, 0, c.width, c.height);
-      watermark(ctx, c.width, c.height);
-      return c.toDataURL("image/jpeg", 0.92);
-    }
+    if (show3d && liveRef.current) return liveRef.current.capture(false, product?.name ?? "");
     if (!auto || !asset || asset === "loading") return null;
     if (!asset.exportable) { toast({ title: "Saving isn't available for this piece", body: "Take a screenshot instead." }); return null; }
     const load = (src: string) => new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); if (!src.startsWith("data:")) i.crossOrigin = "anonymous"; i.onload = () => res(i); i.onerror = rej; i.src = src; });
@@ -574,7 +544,7 @@ function Studio({ slug }: { slug: string }) {
                 {phase === "live" ? (
                   <video ref={attachVideo} autoPlay playsInline muted className="absolute inset-0 size-full object-cover" />
                 ) : photo && (
-                  <img ref={imgRef} src={photo.url} alt="Your photo" draggable={false} onLoad={() => { lmsRef.current = null; detectPhoto(); }} className="absolute inset-0 size-full" />
+                  <img ref={(el) => { (imgRef as React.MutableRefObject<HTMLImageElement | null>).current = el; setImgEl(el); }} src={photo.url} alt="Your photo" draggable={false} onLoad={() => { lmsRef.current = null; detectPhoto(); }} className="absolute inset-0 size-full" />
                 )}
                 <AnimatePresence>
                   {ready && auto && !compare && asset && !show3d && auto.items.map((p, i) => {
@@ -607,8 +577,18 @@ function Studio({ slug }: { slug: string }) {
                     );
                   })}
                 </AnimatePresence>
-                {show3d && !compare && <canvas ref={arCanvas} className="pointer-events-none absolute inset-0 size-full" />}
+                {show3d && <canvas ref={setArCanvas} className="pointer-events-none absolute inset-0 size-full" style={{ visibility: compare ? "hidden" : "visible" }} />}
               </div>
+
+              {/* 3D: guided scan, loading and errors */}
+              {show3d && ls && <ScanOverlay state={ls} onSkip={() => liveRef.current?.skipScan()} onUse2d={() => setUse3d(false)} live={phase === "live"} />}
+              <AnimatePresence>
+                {show3d && note && (
+                  <motion.span initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="absolute left-1/2 top-12 z-20 -translate-x-1/2 whitespace-nowrap rounded-full bg-surface/95 px-3 py-1.5 text-[11.5px] font-semibold shadow">
+                    {note}
+                  </motion.span>
+                )}
+              </AnimatePresence>
 
               {can3d && (
                 <button onClick={() => setUse3d((v) => !v)} className="absolute right-3 top-12 z-10 rounded-full bg-black/55 px-2.5 py-1 text-[10.5px] font-semibold text-white backdrop-blur">
@@ -616,9 +596,9 @@ function Studio({ slug }: { slug: string }) {
                 </button>
               )}
               <span className="absolute left-3 top-3 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white backdrop-blur">Visualization only</span>
-              {asset === "loading" ? (
+              {show3d ? (ls && ls.stage !== "scan" && <Live3dChip state={ls} />) : asset === "loading" ? (
                 <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-surface/95 px-2.5 py-1 text-[10.5px] font-semibold"><Loader2 className="size-3 animate-spin text-brand-deep" /> Preparing piece…</span>
-              ) : show3d ? <Status3D state={tracking3d} live={phase === "live"} hand={handFirst} /> : <StatusChip status={status} overlayReady={ready} live={phase === "live"} />}
+              ) : <StatusChip status={status} overlayReady={ready} live={phase === "live"} />}
               {ready && asset.source === "likeness" && (
                 <span className="absolute bottom-3 left-3 rounded-full bg-black/45 px-2.5 py-1 text-[10px] font-medium text-white/90 backdrop-blur" style={{ bottom: phase === "live" ? 96 : 12 }}>Rendered likeness</span>
               )}
@@ -629,7 +609,9 @@ function Studio({ slug }: { slug: string }) {
                   <button onClick={capture} aria-label="Capture" className="flex size-[68px] items-center justify-center rounded-full border-4 border-white/90 bg-white/25 backdrop-blur transition active:scale-95">
                     <span className="size-[52px] rounded-full bg-white" />
                   </button>
-                  <RoundBtn label="Upload a photo instead" onClick={() => { stopCamera(); setPhase("choose"); }}><ImageUp className="size-5" /></RoundBtn>
+                  {show3d && spec3d?.kind === "ring"
+                    ? <RoundBtn label="Wear the stone on the palm side" onClick={() => setFlip((f) => !f)}><FlipHorizontal2 className="size-5" /></RoundBtn>
+                    : <RoundBtn label="Upload a photo instead" onClick={() => { stopCamera(); setPhase("choose"); }}><ImageUp className="size-5" /></RoundBtn>}
                 </div>
               )}
             </div>
@@ -637,27 +619,38 @@ function Studio({ slug }: { slug: string }) {
             {/* Switch pieces without leaving the camera */}
             <div className="mt-4">{rail}</div>
 
-            {/* Adjust — 3D */}
+            {/* Adjust — 3D: real-world fit controls */}
             {show3d && (
               <div className="mt-4 rounded-[20px] border border-border bg-surface p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-[12.5px] font-semibold">Fine-tune the fit</span>
-                  <span className="text-[11px] text-muted-foreground">Real 3D · follows you</span>
+                  <span className="text-[12.5px] font-semibold">Fit &amp; finish</span>
+                  <span className="text-[11px] text-muted-foreground">True-to-size · follows you in 3D</span>
                 </div>
-                <Slider label="Size" min={0.7} max={1.4} step={0.01} value={fit3d.size} onChange={(v) => setFit3d((f) => ({ ...f, size: v }))} />
-                {tType !== "ring" && <Slider label={handFirst ? "Position" : "Height"} min={-1.5} max={1.5} step={0.05} value={fit3d.height} onChange={(v) => setFit3d((f) => ({ ...f, height: v }))} />}
-                <Slider label={tType === "ring" ? "Position" : "Depth"} min={-1.5} max={1.5} step={0.05} value={fit3d.depth} onChange={(v) => setFit3d((f) => ({ ...f, depth: v }))} />
+                {spec3d && (
+                  <div className="mt-3 flex items-center gap-3 text-[12px] text-muted-foreground">
+                    <span className="w-14">Metal</span>
+                    <div className="flex gap-2" role="radiogroup" aria-label="Metal">
+                      {(Object.keys(METALS) as Metal[]).map((m) => (
+                        <button key={m} role="radio" aria-checked={(metal3 ?? spec3d.metal) === m} title={METALS[m].label} onClick={() => pickMetal(m)}
+                          className={cn("size-7 rounded-full ring-offset-2 ring-offset-surface transition", (metal3 ?? spec3d.metal) === m ? "ring-2 ring-brand" : "hover:scale-110")}
+                          style={{ background: `radial-gradient(circle at 35% 30%, #fff, ${METALS[m].color} 50%, #6b5a3a)` }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <Slider label="Size" min={0.7} max={1.4} step={0.02} value={fitUi.size} onChange={(v) => setFit("size", v)} suffix={`${Math.round(fitUi.size * 100)}%`} />
+                <Slider label="Height" min={-1.5} max={1.5} step={0.05} value={fitUi.height} onChange={(v) => setFit("height", v)} />
+                <Slider label="Depth" min={-1.5} max={1.5} step={0.05} value={fitUi.depth} onChange={(v) => setFit("depth", v)} />
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Chip onClick={() => setFit3d(FIT3D)}><RotateCcw className="size-3.5" /> Reset</Chip>
+                  <Chip onClick={resetFit}><RotateCcw className="size-3.5" /> Reset</Chip>
                   <Chip onPointerDown={() => setCompare(true)} onPointerUp={() => setCompare(false)} onPointerLeave={() => setCompare(false)}>Hold to compare</Chip>
-                  {handFirst && <Chip onClick={() => setFit3d((f) => ({ ...f, flip: !f.flip }))}><FlipHorizontal2 className="size-3.5" /> Palm / back</Chip>}
+                  {spec3d?.kind === "ring" && <Chip onClick={() => setFlip((f) => !f)}><FlipHorizontal2 className="size-3.5" /> {flip ? "Stone on back of hand" : "Stone on palm side"}</Chip>}
+                  {phase === "live" && <Chip onClick={() => liveRef.current?.startScan()}><ScanFace className="size-3.5" /> Rescan</Chip>}
                   {phase === "photo" && liveSupported && <Chip onClick={() => startCamera(handFirst ? "environment" : "user")}><Video className="size-3.5" /> Go live</Chip>}
                   {phase === "photo" && <Chip onClick={() => setPhase("choose")}><RefreshCw className="size-3.5" /> New photo</Chip>}
                 </div>
               </div>
             )}
-
-            {/* Adjust — 2D overlay */}
             {ready && !show3d && (
               <div className="mt-4 rounded-[20px] border border-border bg-surface p-4">
                 <div className="flex items-center justify-between">
@@ -732,6 +725,22 @@ function Studio({ slug }: { slug: string }) {
           </motion.section>
         )}
       </AnimatePresence>
+
+      <Modal open={!!shot} onClose={() => setShot(null)} title="Your try-on">
+        {shot && (
+          <div>
+            <img src={shot} alt={`You wearing ${product.name}`} className="w-full rounded-2xl" />
+            <div className="mt-4 grid grid-cols-2 gap-2.5">
+              <LuxuryButton variant="gold" onClick={() => save(shot)} icon={<Download className="size-4" />}>Save</LuxuryButton>
+              <LuxuryButton variant="outline" onClick={() => share(shot)} icon={<Share2 className="size-4" />}>Share</LuxuryButton>
+            </div>
+            <button
+              onClick={() => { const raw = liveRef.current?.frameImage(facing === "user"); setShot(null); if (raw) { stopCamera(); usePhoto(raw); } }}
+              className="mt-3 w-full text-center text-[12.5px] font-semibold text-muted-foreground underline underline-offset-4"
+            >Continue on this photo{aiEnabled ? " (AI render, fine-tune)" : ""}</button>
+          </div>
+        )}
+      </Modal>
 
       <Modal open={consentOpen} onClose={() => setConsentOpen(false)} title="Create an AI render">
         <ConsentBody onAccept={runAi} />
@@ -833,16 +842,6 @@ function StatusChip({ status, overlayReady, live }: { status: string; overlayRea
   );
 }
 
-function Status3D({ state, live, hand }: { state: "idle" | "searching" | "tracking"; live: boolean; hand: boolean }) {
-  const text = state === "tracking" ? (live ? "Tracking in 3D" : "Placed in 3D") : state === "searching" ? (hand ? "Show your hand" : "Face the camera") : "Starting 3D…";
-  return (
-    <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-surface/95 px-2.5 py-1 text-[10.5px] font-semibold text-foreground">
-      {state === "tracking" ? <span className="size-1.5 rounded-full bg-ok" /> : <Loader2 className="size-3 animate-spin text-brand-deep" />}
-      {text}
-    </span>
-  );
-}
-
 function PrivacyNote({ className }: { className?: string }) {
   return (
     <p className={cn("flex items-start gap-2 text-[12px] leading-relaxed text-muted-foreground", className)}>
@@ -871,12 +870,64 @@ function OptionBody({ icon, title, desc }: { icon: React.ReactNode; title: strin
   );
 }
 
-function Slider({ label, min, max, step, value, onChange }: { label: string; min: number; max: number; step: number; value: number; onChange: (v: number) => void }) {
+function Slider({ label, min, max, step, value, onChange, suffix }: { label: string; min: number; max: number; step: number; value: number; onChange: (v: number) => void; suffix?: string }) {
   return (
     <label className="mt-3 flex items-center gap-3 text-[12px] text-muted-foreground">
-      <span className="w-11">{label}</span>
+      <span className="w-14">{label}</span>
       <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="flex-1 accent-[var(--color-brand)]" />
+      {suffix && <span className="w-9 text-right tabular-nums">{suffix}</span>}
     </label>
+  );
+}
+
+/** Guided scan (face: centre → turn → turn back; hand: palm → back), loading and error states. */
+function ScanOverlay({ state, onSkip, onUse2d, live }: { state: LiveState; onSkip: () => void; onUse2d: () => void; live: boolean }) {
+  if (state.stage === "loading") {
+    return (
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/35 text-white backdrop-blur-[2px]">
+        <Loader2 className="size-6 animate-spin" />
+        <span className="text-[12.5px] font-semibold">{state.status}</span>
+        <span className="text-[11px] opacity-75">Runs on your device · nothing is uploaded</span>
+      </div>
+    );
+  }
+  if (state.stage === "error") {
+    return (
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/55 p-6 text-center text-white">
+        <span className="text-[13px] font-semibold">{state.error ?? "Tracking isn't available on this device."}</span>
+        <button onClick={onUse2d} className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black">Use the 2D try-on</button>
+      </div>
+    );
+  }
+  if (state.stage !== "scan" || !state.scan || !live) return null;
+  const sc = state.scan;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10">
+      {sc.oval && (
+        <div className="absolute left-1/2 top-[44%] h-[58%] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[50%] border-[3px] transition-colors duration-300"
+          style={{ aspectRatio: "0.74", borderColor: sc.ok ? "rgba(120,220,160,.95)" : "rgba(255,255,255,.75)", boxShadow: "0 0 0 2000px rgba(0,0,0,.28)" }}>
+          <span className="tryon-scanline absolute inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-white/90 to-transparent" />
+        </div>
+      )}
+      <div className="absolute inset-x-3 bottom-24 rounded-2xl bg-black/60 p-3.5 text-white backdrop-blur">
+        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.2em] opacity-75">
+          <span>Step {sc.step + 1} of {sc.steps}</span><span>{state.status}</span>
+        </div>
+        <div className="mt-1 font-serif text-[20px] leading-tight">{sc.title}</div>
+        <div className="mt-0.5 text-[12px] opacity-85">{sc.hint}</div>
+        <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-white/20"><div className="h-full rounded-full bg-[#e9c35f] transition-[width] duration-150" style={{ width: `${Math.round(sc.progress * 100)}%` }} /></div>
+        <button onClick={onSkip} className="pointer-events-auto mt-2.5 rounded-full border border-white/40 px-3 py-1 text-[11px] font-semibold">Skip scan</button>
+      </div>
+    </div>
+  );
+}
+
+function Live3dChip({ state }: { state: LiveState }) {
+  return (
+    <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-surface/95 px-2.5 py-1 text-[10.5px] font-semibold text-foreground">
+      {state.stage === "loading" ? <Loader2 className="size-3 animate-spin text-brand-deep" /> : <span className={cn("size-1.5 rounded-full", state.tracking ? "bg-ok" : "bg-brand")} />}
+      {state.status}
+    </span>
   );
 }
 
