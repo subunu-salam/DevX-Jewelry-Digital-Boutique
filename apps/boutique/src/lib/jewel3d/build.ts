@@ -121,12 +121,16 @@ function bandGeometry(innerR: number, width: number, thick: number) {
  */
 export function neckCurve(depth: number, halfWidth = 58) {
   const hw = halfWidth;
+  // The chain carries on round the back of the neck (hidden by the neck occluder in try-on),
+  // so it reads as one continuous loop from every angle.
   return new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-hw * 0.3, 5, -86), new THREE.Vector3(-hw * 0.7, 4, -70),
     new THREE.Vector3(-hw * 0.92, 2, -24), new THREE.Vector3(-hw, -depth * 0.18, -10),
     new THREE.Vector3(-hw * 0.82, -depth * 0.62, -2), new THREE.Vector3(-hw * 0.42, -depth * 0.94, 0),
     new THREE.Vector3(0, -depth, 0.5),
     new THREE.Vector3(hw * 0.42, -depth * 0.94, 0), new THREE.Vector3(hw * 0.82, -depth * 0.62, -2),
     new THREE.Vector3(hw, -depth * 0.18, -10), new THREE.Vector3(hw * 0.92, 2, -24),
+    new THREE.Vector3(hw * 0.7, 4, -70), new THREE.Vector3(hw * 0.3, 5, -86),
   ], false, "centripetal");
 }
 
