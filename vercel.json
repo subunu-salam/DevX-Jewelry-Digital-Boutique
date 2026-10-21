@@ -26,6 +26,6 @@
     { "source": "/(.*)", "destination": { "service": "devx-boutique-web" } }
   ],
   "crons": [
-    { "path": "/api/cron/gold", "schedule": "0 * * * *" }
+    { "path": "/api/cron/gold", "schedule": "30 3 * * *" }
   ]
 }
