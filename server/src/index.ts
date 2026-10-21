@@ -10,7 +10,7 @@ import { aiRouter } from "./routes/ai.js";
 import { retentionRouter } from "./routes/retention.js";
 import { telecallingRouter } from "./routes/telecalling.js";
 import { goldPlansRouter, goldPublicRouter } from "./routes/goldPlans.js";
-import { startGoldWorker } from "./lib/goldIngest.js";
+import { startGoldWorker, ingestGold } from "./lib/goldIngest.js";
 
 const app = express();
 
@@ -53,6 +53,15 @@ app.use("/api/crm/admin", adminRouter);
 app.use("/api/crm/retention", retentionRouter);
 app.use("/api/crm/telecalling", telecallingRouter);
 app.use("/api/crm/gold-plans", goldPlansRouter);
+// Scheduled gold-rate ingest (Vercel Cron). Serverless functions can't run setInterval,
+// so on Vercel the hourly cron in vercel.json calls this instead of startGoldWorker().
+app.get("/api/cron/gold", async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (secret && req.headers.authorization !== `Bearer ${secret}`) return res.status(401).json({ error: "Unauthorized" });
+  const n = await ingestGold();
+  res.json({ ok: true, ingested: n ?? 0 });
+});
+
 // AI features (visual search, catalog studio, intelligence)
 app.use("/api/ai", aiRouter);
 
@@ -66,7 +75,12 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ error: "Internal server error" });
 });
 
-app.listen(env.PORT, () => {
-  console.log(`▲ DevX Boutique OS API listening on :${env.PORT} (${env.NODE_ENV})`);
-  startGoldWorker();
-});
+// On Vercel the app is exported and run as a function; elsewhere (Render, local) it listens.
+if (!process.env.VERCEL) {
+  app.listen(env.PORT, () => {
+    console.log(`▲ DevX Boutique OS API listening on :${env.PORT} (${env.NODE_ENV})`);
+    startGoldWorker();
+  });
+}
+
+export default app;
