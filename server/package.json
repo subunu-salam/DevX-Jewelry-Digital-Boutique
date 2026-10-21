@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "prisma generate && tsc -p tsconfig.json",
+    "build:vercel": "prisma generate && esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --packages=external --outfile=vercel/index.mjs",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",

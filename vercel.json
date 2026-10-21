@@ -14,8 +14,8 @@
     "devx-boutique-api": {
       "root": "server",
       "framework": "express",
-      "entrypoint": "src/index.ts",
-      "buildCommand": "npm run build && npx prisma migrate deploy"
+      "entrypoint": "vercel/index.mjs",
+      "buildCommand": "npm run build:vercel && npx prisma migrate deploy"
     }
   },
   "rewrites": [

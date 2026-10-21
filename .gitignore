@@ -8,3 +8,6 @@ build/
 server/prisma/*.db
 coverage/
 .vite/
+
+# Vercel API bundle (built during deploy)
+server/vercel/
