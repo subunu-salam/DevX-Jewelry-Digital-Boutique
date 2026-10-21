@@ -5,7 +5,7 @@ import { SlidersHorizontal } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Product, Storefront } from "@/lib/types";
 import {
-  ActiveFilter, Drawer, FilterChip, FilterGroup, FilterOption, LuxuryButton, ParticleField, ProductGrid, SearchBar, Select, lineUp, stagger, t,
+  ActiveFilter, Drawer, FilterChip, FilterGroup, FilterOption, LuxuryButton, ProductGrid, SearchBar, Select, lineUp, stagger, t,
 } from "@/design";
 
 const METALS = ["Gold", "Platinum", "Silver"];
@@ -111,29 +111,28 @@ export default function Catalog() {
 
   return (
     <div className="mx-auto max-w-[1320px] px-4 pb-8 md:px-8">
-      {/* Masthead: espresso panel with a living gold particle field */}
+      {/* Masthead: open studio header — eyebrow, large serif title, a warm gold glow */}
       <motion.header
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={t(0.9)}
-        className="relative mb-7 mt-5 overflow-hidden rounded-[28px] bg-night px-6 pb-8 pt-10 text-on-night md:mb-10 md:mt-8 md:px-10 md:pb-12 md:pt-16"
+        className="relative mb-6 mt-2 pb-6 pt-8"
       >
-        <ParticleField />
-        <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-brand/20 blur-3xl" />
-        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-brand/60 to-transparent" />
+        <div aria-hidden className="studio-glow -right-24 -top-28 size-[420px]" />
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-brand/40 to-transparent" />
         <motion.div variants={stagger(0.12, 0.15)} initial="hidden" animate="show" className="relative">
-          <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: t(0.8) } }} className="flex items-center gap-2.5 text-[10px] font-semibold uppercase tracking-[0.32em] text-brand-soft">
-            <span className="h-px w-6 bg-brand" /> Aurelia · The collection
+          <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: t(0.8) } }} className="eyebrow flex items-center gap-2.5">
+            <span className="h-px w-6 bg-brand" /> {categoryName ? "Collection" : "All pieces"}
           </motion.div>
-          <h1 className="mt-3 overflow-hidden font-serif text-[48px] leading-[0.95] md:text-[84px]">
+          <h1 className="mt-3 overflow-hidden font-serif text-[52px] font-normal leading-[1.02] md:text-[76px]">
             <AnimatePresence mode="wait">
               <motion.span key={title} variants={lineUp} initial="hidden" animate="show" exit={{ y: "-105%", transition: { duration: 0.35 } }} className="block">{title}</motion.span>
             </AnimatePresence>
           </h1>
-          <motion.p variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0, transition: t(0.9) } }} className="mt-3 max-w-md text-[14px] leading-relaxed text-on-night/70 md:text-[16px]">
-            Explore the collection. Move across the light to see it gather.
+          <motion.p variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0, transition: t(0.9) } }} className="mt-3 max-w-md text-[14px] leading-relaxed text-muted-foreground md:text-[16px]">
+            Every piece shown in our 3D studio. Open one to turn it in the light and try it on.
           </motion.p>
-          <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: t(0.9) } }} className="mt-5 inline-flex items-center gap-2 rounded-full border border-on-night/15 bg-on-night/5 px-3.5 py-1.5 text-[12px] font-semibold backdrop-blur">
+          <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: t(0.9) } }} className="mt-5 inline-flex items-center gap-2 rounded-full border border-border-secondary px-3.5 py-1.5 text-[12px] text-muted-foreground">
             <span className="size-1.5 rounded-full bg-brand" />
             <AnimatePresence mode="wait">
               <motion.span key={loading ? "l" : products.length} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.3 }}>

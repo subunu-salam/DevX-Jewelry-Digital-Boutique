@@ -1,72 +1,51 @@
-import { useRef } from "react";
 import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { Heart } from "lucide-react";
 import { cn } from "@ui";
 import { useStore } from "@/context/store";
 import type { Product } from "@/lib/types";
-import { Badge } from "./Badge";
-import { JewelImage } from "./JewelImage";
+import { Jewel3DStill } from "./Jewel3DStill";
 import { Price } from "./Price";
 import { rise } from "./motion";
 
-interface Props { product: Product; size?: "md" | "lg"; className?: string; /** pointer-follow tilt + gold spotlight (catalogue) */ interactive?: boolean }
+interface Props { product: Product; size?: "md" | "lg"; className?: string; /** kept for callers; the studio card has its own hover */ interactive?: boolean }
 
-/** Image-led card: large photograph, name, price. Everything else lives on the PDP. */
-export function ProductCard({ product, size = "md", className, interactive }: Props) {
-  const tilt = useRef<HTMLDivElement>(null);
-  const onMove = (e: React.PointerEvent) => {
-    const el = tilt.current;
-    if (!interactive || !el || e.pointerType !== "mouse") return;
-    const r = el.getBoundingClientRect();
-    const px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
-    el.style.setProperty("--rx", `${(0.5 - py) * 7}deg`);
-    el.style.setProperty("--ry", `${(px - 0.5) * 9}deg`);
-    el.style.setProperty("--mx", `${px * 100}%`);
-    el.style.setProperty("--my", `${py * 100}%`);
-  };
-  const onLeave = () => {
-    const el = tilt.current;
-    if (!el) return;
-    el.style.setProperty("--rx", "0deg"); el.style.setProperty("--ry", "0deg");
-  };
+const METAL_SWATCH: Record<string, string> = {
+  yellow: "radial-gradient(circle at 35% 30%, #fff3c4, #e9c35f 45%, #8a6416)",
+  white: "radial-gradient(circle at 35% 30%, #ffffff, #d9dde2 45%, #868c94)",
+  rose: "radial-gradient(circle at 35% 30%, #ffe3d6, #e7ab8f 45%, #91533f)",
+};
+const swatchOf = (metalColor?: string) => {
+  const m = (metalColor ?? "").toLowerCase();
+  return METAL_SWATCH[m.includes("rose") ? "rose" : m.includes("white") || m.includes("platinum") || m.includes("silver") ? "white" : "yellow"];
+};
+
+/** Studio card: the piece in the 3D studio on a dark well, name, metal, price in gold. */
+export function ProductCard({ product, size = "md", className }: Props) {
   const { saved, toggleSaved } = useStore();
   const isSaved = saved.includes(product.id);
-  const inStock = product.availability?.some((a) => a.quantity > 0);
+  const tag = product.isNew ? "New" : product.discount > 0 ? `−${product.discount}%` : product.tryOn ? "Try on" : null;
 
   return (
-    <motion.article variants={rise} className={cn("group relative", className)}>
-      <Link to={`/product/${product.slug}`} className="block" aria-label={product.name}>
-        <div
-          ref={tilt}
-          onPointerMove={onMove}
-          onPointerLeave={onLeave}
-          className={cn(
-            "relative overflow-hidden rounded-[18px] bg-champagne",
-            size === "lg" ? "aspect-[3/4]" : "aspect-[4/5]",
-            interactive && "lux-tilt",
-          )}
-        >
-          {interactive && <span aria-hidden className="lux-spot pointer-events-none absolute inset-0 z-[1]" />}
-          <JewelImage
-            src={product.image}
+    <motion.article
+      variants={rise}
+      className={cn(
+        "panel-card group relative flex flex-col overflow-hidden rounded-[14px] transition-[transform,border-color,box-shadow] duration-[350ms] hover:-translate-y-1 hover:border-brand hover:shadow-[var(--shadow-lift)]",
+        className,
+      )}
+    >
+      <Link to={`/product/${product.slug}`} aria-label={product.name} className="block">
+        <div className={cn("relative overflow-hidden bg-[#0d0b0a]", size === "lg" ? "aspect-[4/5]" : "aspect-square")}>
+          <Jewel3DStill
             piece={product}
-            alt={product.name}
-            loading="lazy"
-            decoding="async"
-            className="transition-[opacity,transform] duration-[1400ms] group-hover:scale-[1.06]"
+            aspect={size === "lg" ? 4 / 5 : 1}
+            imgClassName="transition-transform duration-[1000ms] ease-[cubic-bezier(.2,.7,.2,1)] group-hover:scale-[1.05]"
           />
-          {/* soft vignette that deepens on hover */}
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 transition-opacity duration-700 group-hover:opacity-100" />
-          <div className="absolute left-3 top-3 flex gap-1.5">
-            {product.isNew && <Badge tone="new">New</Badge>}
-            {product.discount > 0 && <Badge tone="gold">−{product.discount}%</Badge>}
-          </div>
-          {/* hover reveal: collection meta */}
-          <div className="pointer-events-none absolute inset-x-3 bottom-3 hidden translate-y-2 items-center justify-between text-[11.5px] font-medium text-[#FFFDF8] opacity-0 transition-all duration-700 ease-[var(--ease-lux)] group-hover:translate-y-0 group-hover:opacity-100 md:flex">
-            <span>{product.karat}K {product.metalColor}</span>
-            <span>{inStock ? "Available in boutique" : "Made to order"}</span>
-          </div>
+          {tag && (
+            <span className="absolute left-3 top-3 z-[2] rounded-full border border-border bg-[rgba(10,9,8,.62)] px-2.5 py-[5px] text-[10px] uppercase tracking-[0.16em] text-brand-deep backdrop-blur-md">
+              {tag}
+            </span>
+          )}
         </div>
       </Link>
 
@@ -74,21 +53,22 @@ export function ProductCard({ product, size = "md", className, interactive }: Pr
         onClick={() => toggleSaved(product.id)}
         aria-label={isSaved ? "Remove from collection" : "Add to collection"}
         aria-pressed={isSaved}
-        className={cn(
-          "absolute right-3 top-3 flex size-9 items-center justify-center rounded-full bg-surface/90 backdrop-blur transition-all duration-500 md:opacity-0 md:group-hover:opacity-100",
-          isSaved && "md:opacity-100",
-        )}
+        className="absolute right-3 top-3 z-[2] flex size-9 items-center justify-center rounded-full border border-border bg-[rgba(10,9,8,.6)] backdrop-blur-md transition hover:border-brand"
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.span key={String(isSaved)} initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.4, opacity: 0 }} transition={{ type: "spring", stiffness: 500, damping: 22 }}>
-            <Heart className={cn("size-[17px]", isSaved ? "fill-brand text-brand" : "text-foreground/75")} strokeWidth={1.6} />
+            <Heart className={cn("size-[17px]", isSaved ? "fill-[#e0a597] text-[#e0a597]" : "text-foreground")} strokeWidth={1.6} />
           </motion.span>
         </AnimatePresence>
       </button>
 
-      <Link to={`/product/${product.slug}`} className="mt-3.5 block px-0.5">
-        <h3 className={cn("font-serif leading-tight text-foreground", size === "lg" ? "text-[22px]" : "text-[18px] md:text-[19px]")}>{product.name}</h3>
-        <Price priceMode={product.priceMode} basePrice={product.basePrice} discount={product.discount} size="sm" className="mt-1" />
+      <Link to={`/product/${product.slug}`} className="flex flex-1 flex-col gap-[3px] px-[14px] pb-[14px] pt-3">
+        <h3 className={cn("font-serif leading-[1.08] text-foreground", size === "lg" ? "text-[23px]" : "text-[19px]")}>{product.name}</h3>
+        <span className="truncate text-[12px] text-muted-foreground">{product.karat}K {product.metalColor} {product.metal?.toLowerCase()}</span>
+        <span className="mt-2.5 flex items-center justify-between gap-2">
+          <Price priceMode={product.priceMode} basePrice={product.basePrice} discount={product.discount} size="sm" className="text-brand-deep" />
+          <i aria-hidden className="size-[13px] shrink-0 rounded-full border border-white/25" style={{ background: swatchOf(product.metalColor) }} />
+        </span>
       </Link>
     </motion.article>
   );
@@ -96,10 +76,12 @@ export function ProductCard({ product, size = "md", className, interactive }: Pr
 
 export function ProductCardSkeleton() {
   return (
-    <div>
-      <div className="skeleton aspect-[4/5] rounded-[18px]" />
-      <div className="skeleton mt-4 h-4 w-3/4 rounded" />
-      <div className="skeleton mt-2 h-3 w-1/3 rounded" />
+    <div className="panel-card overflow-hidden rounded-[14px]">
+      <div className="studio-shimmer aspect-square" />
+      <div className="space-y-2 p-3.5">
+        <div className="skeleton h-4 w-3/4 rounded" />
+        <div className="skeleton h-3 w-1/3 rounded" />
+      </div>
     </div>
   );
 }

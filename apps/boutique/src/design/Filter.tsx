@@ -54,8 +54,8 @@ export function FilterOption({ active, onClick, children, hint }: { active: bool
 /** Horizontal category pill with sliding active fill. */
 export function FilterChip({ active, onClick, children, layoutGroup = "chips" }: { active: boolean; onClick: () => void; children: React.ReactNode; layoutGroup?: string }) {
   return (
-    <button onClick={onClick} className={cn("relative shrink-0 rounded-full border px-4 py-2 text-[13px] font-semibold transition-colors duration-300", active ? "border-ink text-on-ink" : "border-border bg-surface text-foreground/75 hover:border-foreground/40 hover:text-foreground")}>
-      {active && <motion.span layoutId={`chip-${layoutGroup}`} transition={{ type: "spring", stiffness: 420, damping: 36 }} className="absolute inset-0 rounded-full bg-ink" />}
+    <button onClick={onClick} className={cn("relative shrink-0 rounded-full border px-[14px] py-2 text-[12.5px] transition-colors duration-300", active ? "border-brand text-brand-deep" : "border-border text-muted-foreground hover:border-brand hover:text-foreground")}>
+      {active && <motion.span layoutId={`chip-${layoutGroup}`} transition={{ type: "spring", stiffness: 420, damping: 36 }} className="absolute inset-0 rounded-full bg-brand/15" />}
       <span className="relative">{children}</span>
     </button>
   );

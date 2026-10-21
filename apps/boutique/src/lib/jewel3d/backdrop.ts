@@ -1,63 +1,61 @@
 /**
- * Staged backdrops for 3D jewellery — each piece gets a scene that suits it, in the
- * boutique's dark, quiet-luxury palette: a velvet/stone backdrop with a soft overhead
- * spotlight and vignette, a low plinth for the piece to rest on, and a shadow tinted to
- * the scene. The look is chosen from the piece's metal and centre stone, and can be
- * swapped live when the customer changes either in the configurator.
+ * The jeweller's studio every 3D piece is shown in: a near-black backdrop that lifts to a
+ * warm charcoal at the top, a deep vignette and fine film grain; a dark polished floor
+ * that gives a faint mirror reflection of the piece; and a soft contact shadow.
+ * One consistent stage across the boutique (home, catalogue thumbnails, product viewer).
  */
 import * as THREE from "three";
 import type { GemKey, Metal } from "./spec";
 
 export interface Backdrop {
-  /** Name shown to staff/devs; also handy for debugging. */
   name: string;
-  /** Backdrop gradient: spotlight centre → mid → edge. */
-  light: string; mid: string; edge: string;
-  /** Plinth top and side colours. */
-  plinth: string; plinthSide: string;
-  /** Shadow tint (rgb triplet). */
-  shadow: [number, number, number];
-  /** Exposure tweak for this scene. */
+  /** Backdrop gradient (sRGB hex): top of frame → bottom of frame. */
+  top: string; bot: string;
+  /** Vignette centre (0–1, from top-left) and strength (0–1). */
+  centre: [number, number]; vignette: number;
+  /** Strength of the floor reflection (0–1). */
+  reflection: number;
+  /** Contact shadow darkness (0–1). */
+  shadow: number;
   exposure: number;
 }
 
-const SCENES = {
-  espresso: { name: "Espresso velvet", light: "#5a4430", mid: "#2b2018", edge: "#0f0b08", plinth: "#3a2c21", plinthSide: "#1d1610", shadow: [12, 8, 4], exposure: 1.12 },
-  midnight: { name: "Midnight slate", light: "#3f4752", mid: "#1d2229", edge: "#0a0c10", plinth: "#2a3038", plinthSide: "#14181d", shadow: [4, 6, 10], exposure: 1.1 },
-  mauve: { name: "Dusk mauve", light: "#6a4a4c", mid: "#33232a", edge: "#120c0f", plinth: "#423033", plinthSide: "#21171b", shadow: [14, 6, 8], exposure: 1.1 },
-  forest: { name: "Forest velvet", light: "#2f4a3c", mid: "#16261e", edge: "#07100b", plinth: "#20342a", plinthSide: "#0f1a14", shadow: [3, 10, 6], exposure: 1.12 },
-  navy: { name: "Sapphire night", light: "#2d3f62", mid: "#141d33", edge: "#060914", plinth: "#1e2a44", plinthSide: "#0e1424", shadow: [3, 5, 14], exposure: 1.12 },
-  oxblood: { name: "Oxblood silk", light: "#5e2a2c", mid: "#2c1214", edge: "#0f0606", plinth: "#3b1a1c", plinthSide: "#1d0c0d", shadow: [14, 3, 3], exposure: 1.1 },
-  pearl: { name: "Ivory stone", light: "#e9e2d6", mid: "#c9bfae", edge: "#7d7262", plinth: "#d8cfbf", plinthSide: "#a89d8b", shadow: [60, 45, 30], exposure: 1.0 },
-} satisfies Record<string, Backdrop>;
+export const STUDIO: Backdrop = {
+  name: "Studio",
+  top: "#1b1613", bot: "#050404",
+  centre: [0.5, 0.4], vignette: 1,
+  reflection: 0.2,
+  shadow: 0.35,
+  exposure: 1.05,
+};
 
-export type SceneKey = keyof typeof SCENES;
-
-/** Pick the scene that best flatters a piece. */
-export function backdropFor(metal: Metal, gem: GemKey | null): Backdrop {
-  if (gem === "emerald") return SCENES.forest;
-  if (gem === "sapphire" || gem === "aquamarine") return SCENES.navy;
-  if (gem === "ruby") return SCENES.oxblood;
-  if (gem === "pearl") return SCENES.pearl;
-  if (gem === "morganite" || gem === "amethyst") return SCENES.mauve;
-  return metal === "white" ? SCENES.midnight : metal === "rose" ? SCENES.mauve : SCENES.espresso;
+/** Every piece shares the studio; kept as a function so per-piece looks can return later. */
+export function backdropFor(_metal?: Metal, _gem?: GemKey | null): Backdrop {
+  return STUDIO;
 }
 
-/** CSS gradient for the same scene — used behind the canvas while 3D loads, so there's no flash. */
-export function backdropCss(b: Backdrop) {
-  return `radial-gradient(ellipse 70% 55% at 50% 38%, ${b.light} 0%, ${b.mid} 55%, ${b.edge} 100%)`;
+/** CSS for the same backdrop — shown behind the canvas while 3D loads, so there's no flash. */
+export function backdropCss(b: Backdrop = STUDIO) {
+  const [cx, cy] = b.centre;
+  return `radial-gradient(ellipse 85% 70% at ${cx * 100}% ${cy * 100}%, transparent 25%, rgba(0,0,0,${0.82 * b.vignette}) 100%), linear-gradient(180deg, ${b.top}, ${b.bot})`;
 }
 
 function backdropTexture(b: Backdrop) {
-  const c = document.createElement("canvas"); c.width = 512; c.height = 512;
+  const W = 512, H = 512;
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
   const x = c.getContext("2d")!;
-  const g = x.createRadialGradient(256, 190, 10, 256, 230, 380);
-  g.addColorStop(0, b.light); g.addColorStop(0.55, b.mid); g.addColorStop(1, b.edge);
-  x.fillStyle = g; x.fillRect(0, 0, 512, 512);
-  // fine grain so the gradient reads as fabric/stone rather than a flat digital fill
-  const img = x.getImageData(0, 0, 512, 512);
+  const lin = x.createLinearGradient(0, 0, 0, H);
+  lin.addColorStop(0, b.top); lin.addColorStop(1, b.bot);
+  x.fillStyle = lin; x.fillRect(0, 0, W, H);
+  // vignette: darken towards the edges, to ~18% at the corners
+  const [cx, cy] = b.centre;
+  const v = x.createRadialGradient(cx * W, cy * H, W * 0.12, cx * W, cy * H, W * 0.78);
+  v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, `rgba(0,0,0,${0.82 * b.vignette})`);
+  x.fillStyle = v; x.fillRect(0, 0, W, H);
+  // ±0.5/255 grain so the dark gradient never bands
+  const img = x.getImageData(0, 0, W, H);
   for (let i = 0; i < img.data.length; i += 4) {
-    const n = (Math.random() - 0.5) * 7;
+    const n = Math.random() < 0.5 ? -1 : 1;
     img.data[i] += n; img.data[i + 1] += n; img.data[i + 2] += n;
   }
   x.putImageData(img, 0, 0);
@@ -65,56 +63,69 @@ function backdropTexture(b: Backdrop) {
   return t;
 }
 
-function shadowTexture(b: Backdrop) {
+function blobTexture() {
   const c = document.createElement("canvas"); c.width = c.height = 256;
   const x = c.getContext("2d")!;
-  const [r, g, bl] = b.shadow;
-  const gr = x.createRadialGradient(128, 128, 0, 128, 128, 128);
-  gr.addColorStop(0, `rgba(${r},${g},${bl},0.55)`); gr.addColorStop(0.45, `rgba(${r},${g},${bl},0.18)`); gr.addColorStop(1, `rgba(${r},${g},${bl},0)`);
-  x.fillStyle = gr; x.fillRect(0, 0, 256, 256);
+  const g = x.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.35, "rgba(0,0,0,.55)"); g.addColorStop(1, "rgba(0,0,0,0)");
+  x.fillStyle = g; x.fillRect(0, 0, 256, 256);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
 
-/**
- * The physical part of the stage: a low round plinth with a soft shadow on it.
- * Returns a group placed so its top surface sits at y = 0.
- */
-function plinthGroup(b: Backdrop, radius: number) {
-  const g = new THREE.Group();
-  const r = radius * 1.35, h = radius * 0.22;
-  const top = new THREE.MeshStandardMaterial({ color: b.plinth, roughness: 0.92, metalness: 0 });
-  const side = new THREE.MeshStandardMaterial({ color: b.plinthSide, roughness: 0.85, metalness: 0 });
-  const cyl = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.02, h, 96, 1), [side, top, side]);
-  cyl.position.y = -h / 2;
-  g.add(cyl);
-  const sh = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2.4, radius * 2.4), new THREE.MeshBasicMaterial({ map: shadowTexture(b), transparent: true, depthWrite: false }));
-  sh.rotation.x = -Math.PI / 2; sh.position.y = 0.001;
-  g.add(sh);
-  return g;
+/** A faint mirror image of the piece below the floor line (shares geometry; own faded materials). */
+function reflectionOf(subject: THREE.Object3D, floorY: number, strength: number) {
+  const mirror = subject.clone(true);
+  const made: THREE.Material[] = [];
+  mirror.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const fade = (src: THREE.Material) => {
+      const mat = src.clone();
+      mat.transparent = true;
+      mat.opacity = (src.opacity ?? 1) * strength;
+      mat.depthWrite = false;
+      made.push(mat);
+      return mat;
+    };
+    m.material = Array.isArray(m.material) ? m.material.map(fade) : fade(m.material);
+    m.castShadow = false; m.renderOrder = -1;
+  });
+  // world-space mirror about y = floorY (three.js flips face winding for negative scale)
+  const holder = new THREE.Group();
+  holder.position.y = 2 * floorY;
+  holder.scale.y = -1;
+  subject.updateWorldMatrix(true, false);
+  mirror.matrixAutoUpdate = false;
+  mirror.matrix.copy(subject.matrixWorld);
+  holder.add(mirror);
+  return { holder, made };
 }
 
 /**
- * Apply a backdrop to a scene. `floorY` is where the piece's lowest point sits.
- * Returns a function that removes/disposes everything it added.
+ * Apply the studio to a scene. `subject` is the piece (for its reflection), `floorY` the
+ * height of its lowest point. Returns a function that removes/disposes what it added.
  */
-export function applyBackdrop(scene: THREE.Scene, renderer: THREE.WebGLRenderer, b: Backdrop, radius: number, floorY: number) {
+export function applyBackdrop(scene: THREE.Scene, renderer: THREE.WebGLRenderer, b: Backdrop, radius: number, floorY: number, subject?: THREE.Object3D) {
   const bg = backdropTexture(b);
   scene.background = bg;
   renderer.toneMappingExposure = b.exposure;
-  const stage = plinthGroup(b, radius);
-  stage.position.y = floorY;
-  scene.add(stage);
+
+  const added: THREE.Object3D[] = [];
+  let made: THREE.Material[] = [];
+  if (subject && b.reflection > 0) {
+    const r = reflectionOf(subject, floorY, b.reflection);
+    scene.add(r.holder); added.push(r.holder); made = r.made;
+  }
+  const blobTex = blobTexture();
+  const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, opacity: b.shadow, depthWrite: false });
+  const blob = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2.6, radius * 2.6), blobMat);
+  blob.rotation.x = -Math.PI / 2; blob.position.y = floorY + radius * 0.002;
+  scene.add(blob); added.push(blob);
+
   return () => {
-    scene.remove(stage);
-    stage.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (m.isMesh) {
-        m.geometry.dispose();
-        const mat = m.material as THREE.Material | THREE.Material[];
-        (Array.isArray(mat) ? mat : [mat]).forEach((x) => { (x as THREE.MeshBasicMaterial).map?.dispose(); x.dispose(); });
-      }
-    });
-    bg.dispose();
+    added.forEach((o) => scene.remove(o));
+    made.forEach((m) => m.dispose());
+    blob.geometry.dispose(); blobMat.dispose(); blobTex.dispose(); bg.dispose();
   };
 }

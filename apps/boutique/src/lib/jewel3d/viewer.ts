@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { buildJewel, setGem, setMetal, showcasePose, type Jewel } from "./build";
-import { centre, makeRenderer, studioEnvironment } from "./stage";
+import { centre, contactShadow, makeRenderer, studioEnvironment } from "./stage";
 import { applyBackdrop, backdropFor } from "./backdrop";
 import type { GemKey, JewelSpec, Metal } from "./spec";
 
@@ -18,7 +18,7 @@ export interface Viewer {
   dispose(): void;
 }
 
-export function createViewer(canvas: HTMLCanvasElement, spec: JewelSpec, opts: { jewel?: Jewel } = {}): Viewer {
+export function createViewer(canvas: HTMLCanvasElement, spec: JewelSpec, opts: { jewel?: Jewel; /** flat background colour instead of the dark studio (used by the CRM) */ background?: string } = {}): Viewer {
   const renderer = makeRenderer(canvas);
   const scene = new THREE.Scene();
   scene.environment = studioEnvironment(renderer);
@@ -29,11 +29,21 @@ export function createViewer(canvas: HTMLCanvasElement, spec: JewelSpec, opts: {
   holder.add(jewel.group);
   const radius = centre(jewel.group);
   scene.add(holder);
-  // staged backdrop + plinth, chosen from the piece's metal and stone; re-staged on swaps
+  // jeweller's studio: backdrop, floor reflection, contact shadow; re-staged on metal/stone swaps
+  // (the reflection copies the piece's materials, so it must be rebuilt when they change).
+  // A caller can ask for a plain flat background instead (the CRM's light workspace).
   const floorY = new THREE.Box3().setFromObject(jewel.group).min.y;
   let metal: Metal = spec.metal, gem: GemKey | null = spec.gem;
-  let clearStage = applyBackdrop(scene, renderer, backdropFor(metal, gem), radius, floorY);
-  const restage = () => { clearStage(); clearStage = applyBackdrop(scene, renderer, backdropFor(metal, gem), radius, floorY); };
+  const stageIt = () => {
+    if (!opts.background) return applyBackdrop(scene, renderer, backdropFor(metal, gem), radius, floorY, jewel.group);
+    scene.background = new THREE.Color(opts.background);
+    const shadow = contactShadow(radius * 2.2);
+    shadow.position.y = -radius * 0.92;
+    scene.add(shadow);
+    return () => { scene.remove(shadow); shadow.geometry.dispose(); const m = shadow.material as THREE.MeshBasicMaterial; m.map?.dispose(); m.dispose(); };
+  };
+  let clearStage = stageIt();
+  const restage = () => { if (opts.background) return; clearStage(); clearStage = stageIt(); };
 
   const camera = new THREE.PerspectiveCamera(30, 1, radius * 0.05, radius * 40);
   const home = new THREE.Vector3(radius * 0.9, radius * 0.6, radius * 3.3);

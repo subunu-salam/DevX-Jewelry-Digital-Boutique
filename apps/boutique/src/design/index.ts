@@ -22,6 +22,7 @@ export type { OrbitItem } from "./OrbitCarousel";
 export { InstallPrompt } from "./InstallPrompt";
 export { Showcase } from "./Showcase";
 export { JewelImage, fallbackImage } from "./JewelImage";
+export { Jewel3DStill } from "./Jewel3DStill";
 export type { PieceInfo } from "./JewelImage";
 export { OpeningScreen } from "./OpeningScreen";
 export type { ShowcaseItem } from "./Showcase";

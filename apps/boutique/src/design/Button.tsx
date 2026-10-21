@@ -22,7 +22,7 @@ const base =
 const variants: Record<Variant, string> = {
   // Charcoal is the primary CTA — gold stays an accent, never a flood.
   primary: "sheen rounded-full bg-ink text-on-ink hover:bg-ink-soft shadow-[var(--shadow-lift)]",
-  gold: "sheen rounded-full bg-brand text-[#FFFDF8] hover:brightness-95",
+  gold: "sheen rounded-full gold-fill uppercase tracking-[0.17em] hover:-translate-y-0.5 hover:brightness-105",
   outline: "rounded-full border border-border-secondary bg-transparent text-foreground hover:border-foreground",
   ghost: "rounded-full text-foreground hover:bg-muted",
   link: "rounded-none px-0! text-foreground underline decoration-brand-soft underline-offset-[6px] hover:decoration-brand-deep",

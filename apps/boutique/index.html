@@ -8,7 +8,7 @@
 
     <!-- Installable web app (Android, iOS, Windows, macOS) -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#F7F2E8" />
+    <meta name="theme-color" content="#0a0908" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Aurelia" />
@@ -22,16 +22,16 @@
       (function () {
         try {
           var t = localStorage.getItem("aurelia_theme");
-          if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          if (t !== "light" && t !== "dark") t = "dark";
           document.documentElement.setAttribute("data-theme", t);
-          document.querySelector('meta[name="theme-color"]').setAttribute("content", t === "dark" ? "#13110E" : "#F7F2E8");
+          document.querySelector('meta[name="theme-color"]').setAttribute("content", t === "dark" ? "#0a0908" : "#F7F2E8");
         } catch (e) {}
       })();
     </script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>

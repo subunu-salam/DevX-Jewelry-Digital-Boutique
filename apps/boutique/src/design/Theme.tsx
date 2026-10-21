@@ -5,7 +5,7 @@ import { cn } from "@ui";
 
 type Theme = "light" | "dark";
 const KEY = "aurelia_theme";
-const META = { light: "#F7E6DA", dark: "#1A1310" };
+const META = { light: "#F7E6DA", dark: "#0a0908" };
 
 const Ctx = createContext<{ theme: Theme; toggle: () => void; setTheme: (t: Theme) => void }>({ theme: "light", toggle: () => {}, setTheme: () => {} });
 export const useTheme = () => useContext(Ctx);
@@ -15,7 +15,8 @@ function initial(): Theme {
     const saved = localStorage.getItem(KEY);
     if (saved === "light" || saved === "dark") return saved;
   } catch { /* ignore */ }
-  return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  // Dark is the house look (matching the 3D studio); customers can still switch to light.
+  return "dark";
 }
 
 function apply(theme: Theme) {
@@ -35,7 +36,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (!mq) return;
     const onChange = (e: MediaQueryListEvent) => {
       try { if (localStorage.getItem(KEY)) return; } catch { /* ignore */ }
-      setThemeState(e.matches ? "dark" : "light");
+      void e; // follow the house dark look rather than the OS setting
     };
     mq.addEventListener?.("change", onChange);
     return () => mq.removeEventListener?.("change", onChange);

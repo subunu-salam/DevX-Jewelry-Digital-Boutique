@@ -44,12 +44,12 @@ function draw(spec: JewelSpec, { jewel: given, aspect = 2 / 3, height = 900 }: {
   const radius = centre(jewel.group);
   scene.add(jewel.group);
   const floorY = new THREE.Box3().setFromObject(jewel.group).min.y;
-  const clear = applyBackdrop(scene, renderer, backdropFor(spec.metal, spec.gem), radius, floorY);
+  const clear = applyBackdrop(scene, renderer, backdropFor(spec.metal, spec.gem), radius, floorY, jewel.group);
 
-  // A slightly raised three-quarter view, the piece sitting a little above centre,
-  // pulled back enough that the plinth edge shows in a tall portrait frame.
+  // A slightly raised three-quarter view with the piece a little above centre, leaving
+  // room below for its reflection on the studio floor.
   const camera = new THREE.PerspectiveCamera(28, w / h, radius * 0.05, radius * 40);
-  const dist = radius * (aspect < 0.6 ? 5.4 : 4.6);
+  const dist = radius * (aspect < 0.6 ? 5.4 : aspect < 0.9 ? 4.6 : 3.9);
   camera.position.set(radius * 0.55, radius * 1.0, dist);
   camera.lookAt(0, -radius * 0.35, 0);
 

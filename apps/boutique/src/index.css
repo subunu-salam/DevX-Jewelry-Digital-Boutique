@@ -32,7 +32,7 @@
   --color-gray-400: #9A907F;
 
   --font-serif: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
-  --font-sans: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Inter", "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
   --radius-2xl: 1.25rem;
 
@@ -51,31 +51,32 @@
 
 /* ── Dark mode: same token names, re-valued. Toggled via <html data-theme="dark"> ── */
 [data-theme="dark"] {
-  --color-background: #13110E;
-  --color-foreground: #F1EADD;
-  --color-surface: #1C1915;
-  --color-card: #1C1915;
-  --color-champagne: #2A241C;
-  --color-sand: #201C17;
-  --color-muted: #26211B;
-  --color-muted-foreground: #A89E8C;
-  --color-ink: #EDE4D3;
-  --color-ink-soft: #DDD2BE;
-  --color-on-ink: #16130F;
-  --color-night: #1E1A15;
-  --color-on-night: #F1EADD;
-  --color-glass: rgba(28, 25, 21, 0.82);
-  --color-backdrop: #0B0A08;
-  --color-brand: #C4A36A;
-  --color-brand-deep: #D4B785;
-  --color-brand-soft: #6B5836;
-  --color-border: #2E2922;
-  --color-border-secondary: #3D362C;
-  --color-ok: #7FB08C;
-  --color-danger: #D98A7A;
-  --color-gray-300: #5A5246;
-  --color-gray-400: #7A7162;
-  --shadow-lift: 0 18px 40px -22px rgba(0, 0, 0, 0.7);
+  /* Studio night — matched to the 3D stage (near-black, warm gold hairlines) */
+  --color-background: #0a0908;
+  --color-foreground: #f3ecdf;
+  --color-surface: #161311;
+  --color-card: #161311;
+  --color-champagne: #0d0b0a;           /* image wells */
+  --color-sand: #12100e;
+  --color-muted: #1d1916;
+  --color-muted-foreground: #8d8374;
+  --color-ink: #f2d89a;                 /* primary fills = pale gold */
+  --color-ink-soft: #d9b46a;
+  --color-on-ink: #17120a;
+  --color-night: #12100e;
+  --color-on-night: #f3ecdf;
+  --color-glass: rgba(10, 9, 8, 0.72);
+  --color-backdrop: #050404;
+  --color-brand: #d9b46a;
+  --color-brand-deep: #f2d89a;
+  --color-brand-soft: #a77f34;
+  --color-border: rgba(231, 205, 150, 0.14);
+  --color-border-secondary: rgba(231, 205, 150, 0.28);
+  --color-ok: #8fd19e;
+  --color-danger: #e58a7d;
+  --color-gray-300: #5a5246;
+  --color-gray-400: #8d8374;
+  --shadow-lift: 0 30px 80px rgba(0, 0, 0, 0.55);
   color-scheme: dark;
 }
 :root { color-scheme: light; }
@@ -187,3 +188,23 @@
 @keyframes tryon-scan { 0%, 100% { top: 6%; } 50% { top: 92%; } }
 @media (prefers-reduced-motion: reduce) { .tryon-scanline { animation: none; top: 50%; } }
 @media (prefers-reduced-motion: reduce) { .jewel-shine { animation: none; opacity: 0; } }
+
+/* ── Studio look (shared with the 3D stage) ── */
+.gold-text {
+  background: linear-gradient(110deg, #a77f34 0%, #f2d89a 38%, #d9b46a 55%, #fff0c6 72%, #b98b3c 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.gold-fill {
+  background: linear-gradient(120deg, #b88a3c, #f1d493 45%, #d9b46a 60%, #fbe6ad);
+  color: #1a130a;
+  box-shadow: 0 10px 30px rgba(217, 180, 106, .22), inset 0 1px 0 rgba(255, 255, 255, .5);
+}
+.panel-card { background: linear-gradient(180deg, #1d1916, #161311); border: 1px solid rgba(231, 205, 150, .14); }
+.eyebrow { font-size: 11px; letter-spacing: .28em; text-transform: uppercase; color: var(--color-brand); font-weight: 500; }
+.studio-glow { position: absolute; pointer-events: none; background: radial-gradient(closest-side, rgba(217, 180, 106, .14), transparent 70%); }
+@keyframes marquee { to { transform: translateX(-50%); } }
+.marquee-track { display: inline-flex; gap: 48px; animation: marquee 40s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .marquee-track { animation: none; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes studioShimmer { to { background-position: -200% 0; } }
+.studio-shimmer { background: linear-gradient(110deg, transparent 30%, rgba(231, 205, 150, .06) 50%, transparent 70%); background-size: 200% 100%; animation: studioShimmer 1.4s infinite; }

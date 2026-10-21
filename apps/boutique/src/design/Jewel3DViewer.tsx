@@ -16,7 +16,7 @@ const GEM_CHOICES: GemKey[] = ["diamond", "ruby", "sapphire", "emerald", "morgan
 interface ProductLike { name: string; slug?: string; metalColor?: string | null; stoneType?: string | null; tags?: string[]; category?: { slug: string } | null; tryOn?: { type: string } | null; model3d?: string | null }
 
 /** Photoreal, interactive 3D view of a piece — generated from its catalogue details. */
-export function Jewel3DViewer({ product, className }: { product: ProductLike; className?: string }) {
+export function Jewel3DViewer({ product, className, minimal }: { product: ProductLike; className?: string; /** clean stage: no toolbar or configurator (e.g. home hero) */ minimal?: boolean }) {
   const spec = useMemo(() => specFromProduct(product), [product]);
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -57,12 +57,15 @@ export function Jewel3DViewer({ product, className }: { product: ProductLike; cl
   const fullscreen = () => { if (document.fullscreenElement) document.exitFullscreen(); else wrap.current?.requestFullscreen?.(); };
 
   return (
-    <div ref={wrap} style={{ background: backdropCss(backdropFor(metal, gem)) }} className={cn("relative overflow-hidden rounded-[22px]", full ? "h-screen w-screen rounded-none" : "aspect-square w-full", className)}>
+    <div ref={wrap} style={{ background: backdropCss(backdropFor(metal, gem)) }} className={cn("relative overflow-hidden rounded-[20px]", !minimal && "border border-border", full ? "h-screen w-screen rounded-none" : "aspect-square w-full", className)}>
       <canvas ref={canvas} className="size-full touch-none" aria-label={`3D view of ${product.name}. Drag to rotate, pinch or scroll to zoom.`} />
 
       {state === "loading" && <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-white/70"><Loader2 className="size-4 animate-spin" /> Preparing 3D view…</div>}
       {state === "error" && <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-white/70">3D isn't supported on this device.</div>}
 
+      {minimal ? (
+        state === "ready" && <span className="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap text-[10.5px] uppercase tracking-[0.2em] text-muted-foreground"><Rotate3d className="size-3.5" /> Drag to turn · pinch to zoom</span>
+      ) : (<>
       <span className="pointer-events-none absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-white/85 backdrop-blur-md"><Rotate3d className="size-3.5" /> 3D · drag to rotate</span>
 
       {/* Toolbar */}
@@ -91,6 +94,7 @@ export function Jewel3DViewer({ product, className }: { product: ProductLike; cl
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }
