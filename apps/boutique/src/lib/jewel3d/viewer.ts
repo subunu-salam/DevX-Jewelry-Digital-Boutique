@@ -5,7 +5,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { buildJewel, setGem, setMetal, showcasePose, type Jewel } from "./build";
-import { centre, contactShadow, makeRenderer, studioEnvironment } from "./stage";
+import { centre, makeRenderer, studioEnvironment } from "./stage";
+import { applyBackdrop, backdropFor } from "./backdrop";
 import type { GemKey, JewelSpec, Metal } from "./spec";
 
 export interface Viewer {
@@ -17,10 +18,9 @@ export interface Viewer {
   dispose(): void;
 }
 
-export function createViewer(canvas: HTMLCanvasElement, spec: JewelSpec, opts: { background?: string; jewel?: Jewel } = {}): Viewer {
+export function createViewer(canvas: HTMLCanvasElement, spec: JewelSpec, opts: { jewel?: Jewel } = {}): Viewer {
   const renderer = makeRenderer(canvas);
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(opts.background ?? "#f6f4f1");
   scene.environment = studioEnvironment(renderer);
 
   const jewel: Jewel = opts.jewel ?? buildJewel(spec);
@@ -29,9 +29,11 @@ export function createViewer(canvas: HTMLCanvasElement, spec: JewelSpec, opts: {
   holder.add(jewel.group);
   const radius = centre(jewel.group);
   scene.add(holder);
-  const shadow = contactShadow(radius * 2.2);
-  shadow.position.y = -radius * 0.92;
-  scene.add(shadow);
+  // staged backdrop + plinth, chosen from the piece's metal and stone; re-staged on swaps
+  const floorY = new THREE.Box3().setFromObject(jewel.group).min.y;
+  let metal: Metal = spec.metal, gem: GemKey | null = spec.gem;
+  let clearStage = applyBackdrop(scene, renderer, backdropFor(metal, gem), radius, floorY);
+  const restage = () => { clearStage(); clearStage = applyBackdrop(scene, renderer, backdropFor(metal, gem), radius, floorY); };
 
   const camera = new THREE.PerspectiveCamera(30, 1, radius * 0.05, radius * 40);
   const home = new THREE.Vector3(radius * 0.9, radius * 0.6, radius * 3.3);
@@ -63,13 +65,13 @@ export function createViewer(canvas: HTMLCanvasElement, spec: JewelSpec, opts: {
   loop();
 
   return {
-    setMetal: (m) => setMetal(jewel, m),
-    setGem: (g) => setGem(jewel, g),
+    setMetal: (m) => { setMetal(jewel, m); metal = m; restage(); },
+    setGem: (g) => { setGem(jewel, g); gem = g; restage(); },
     setAutoRotate: (on) => { controls.autoRotate = on; },
     reset: () => { camera.position.copy(home); controls.target.set(0, 0, 0); controls.autoRotate = true; },
     snapshot: () => { renderer.render(scene, camera); return canvas.toDataURL("image/png"); },
     dispose: () => {
-      cancelAnimationFrame(raf); ro.disconnect(); io.disconnect(); controls.dispose();
+      cancelAnimationFrame(raf); ro.disconnect(); io.disconnect(); controls.dispose(); clearStage();
       scene.traverse((o) => {
         const m = o as THREE.Mesh;
         if (m.isMesh) { m.geometry.dispose(); const mat = m.material as THREE.Material | THREE.Material[]; (Array.isArray(mat) ? mat : [mat]).forEach((x) => x.dispose()); }

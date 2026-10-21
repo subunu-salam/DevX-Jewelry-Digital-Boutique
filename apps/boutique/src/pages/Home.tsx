@@ -2,15 +2,11 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, useReducedMotion } from "motion/react";
 import { ArrowRight, BadgeCheck, CalendarClock, Coins, KeyRound, ShieldCheck } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, API_URL } from "@/lib/api";
+import { specFromProduct } from "@/lib/jewel3d/spec";
+import { backdropCss, backdropFor } from "@/lib/jewel3d/backdrop";
 import type { Product, Storefront } from "@/lib/types";
 import { EASE, JewelImage, LuxuryButton, OpeningScreen, Price, fallbackImage, lineUp, reveal, stagger, t } from "@/design";
-
-/**
- * Centre arch image. Leave null to use the first collection's cover photo, or set a URL
- * (e.g. "/hero/centre.jpg" placed in apps/boutique/public/hero/) to choose your own.
- */
-const HERO_CENTRE_IMAGE: string | null = null;
 
 /** Peach & Gold landing — first impression for private clients. */
 export default function Home() {
@@ -52,7 +48,7 @@ export default function Home() {
           </motion.p>
         </motion.div>
 
-        <Triptych pieces={pieces.slice(0, 3)} centreImage={HERO_CENTRE_IMAGE ?? collections[0]?.heroImage} centreLink={collections[0] ? `/catalog?collection=${collections[0].slug}` : undefined} loading={!loaded} />
+        <Triptych pieces={heroPieces(featured)} loading={!loaded} />
 
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={t(0.9, 0.9)}>
           <EliteCTA label="Enter the collection" onClick={() => navigate("/catalog")} />
@@ -163,50 +159,99 @@ function Rule({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Three arches side by side (the middle one taller). The centre arch carries a bold
- * editorial image; the sides are featured pieces. They rise in one after another.
+ * Pick the three hero pieces: featured pieces that can be shown in 3D, preferring three
+ * different staged scenes (e.g. gold on espresso, white gold on slate, an emerald on
+ * forest velvet) so the arches read as a varied, curated set.
  */
-function Triptych({ pieces, centreImage, centreLink, loading }: { pieces: Product[]; centreImage?: string | null; centreLink?: string; loading: boolean }) {
-  const reduced = useReducedMotion();
-  const slots: { image?: string | null; to?: string; alt: string; fallback: string }[] = [
-    { image: pieces[0]?.image, to: pieces[0] && `/product/${pieces[0].slug}`, alt: pieces[0]?.name ?? "", fallback: fallbackImage(pieces[0]) },
-    { image: centreImage ?? pieces[1]?.image, to: centreLink ?? (pieces[1] && `/product/${pieces[1].slug}`), alt: "The collection", fallback: fallbackImage(pieces[1]) },
-    { image: pieces[2]?.image, to: pieces[2] && `/product/${pieces[2].slug}`, alt: pieces[2]?.name ?? "", fallback: fallbackImage(pieces[2]) },
-  ];
+function heroPieces(featured: Product[]): Product[] {
+  const able = featured.filter((p) => specFromProduct(p));
+  const picked: Product[] = [];
+  const seen = new Set<string>();
+  for (const p of able) {
+    const s = specFromProduct(p)!;
+    const scene = backdropFor(s.metal, s.gem).name;
+    if (!seen.has(scene)) { seen.add(scene); picked.push(p); }
+    if (picked.length === 3) break;
+  }
+  for (const p of able) { if (picked.length === 3) break; if (!picked.includes(p)) picked.push(p); }
+  for (const p of featured) { if (picked.length === 3) break; if (!picked.includes(p)) picked.push(p); }
+  // the most striking piece goes in the tall centre arch
+  return picked.length === 3 ? [picked[1], picked[0], picked[2]] : picked;
+}
+
+/** A still of the piece on its staged 3D backdrop; null until rendered, or if 3D isn't available. */
+function useStill(product: Product | undefined, aspect: number) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setUrl(null); setFailed(false);
+    const spec = product && specFromProduct(product);
+    if (!product || !spec) { setFailed(true); return; }
+    let alive = true;
+    import("@/lib/jewel3d/still")
+      .then(async ({ renderStill }) => {
+        const jewel = product.model3d
+          ? await import("@/lib/jewel3d/custom").then(({ loadProductModel }) => loadProductModel(product.model3d!, API_URL, spec)).catch(() => undefined)
+          : undefined;
+        return renderStill(spec, { jewel: jewel ?? undefined, aspect });
+      })
+      .then((u) => alive && setUrl(u))
+      .catch(() => alive && setFailed(true));
+    return () => { alive = false; };
+  }, [product, aspect]);
+  return { url, failed };
+}
+
+/**
+ * Three arches side by side (the middle one taller), each a featured piece photographed in
+ * 3D on a backdrop chosen for it. They rise in one after another.
+ */
+function Triptych({ pieces, loading }: { pieces: Product[]; loading: boolean }) {
   return (
     <div className="grid grid-cols-3 items-end gap-2">
-      {slots.map((p, k) => {
-        const body = (
-          <motion.div
-            initial={{ clipPath: "inset(100% 0% 0% 0%)" }}
-            animate={{ clipPath: "inset(0% 0% 0% 0%)" }}
-            transition={{ duration: 1.3, ease: EASE, delay: 0.45 + k * 0.15 }}
-            className={`relative overflow-hidden bg-champagne ${k === 1 ? "aspect-[8/15]" : "aspect-[2/3]"}`}
-            style={{ borderRadius: "999px 999px 10px 10px" }}
-          >
-            {loading || !p.image ? (
-              <div className="skeleton absolute inset-0" />
-            ) : (
-              <motion.img
-                src={p.image}
-                alt={p.alt}
-                onError={(e) => { const img = e.currentTarget; if (img.src !== p.fallback) img.src = p.fallback; }}
-                loading={k === 1 ? "eager" : "lazy"}
-                initial={{ scale: 1.15 }}
-                animate={reduced ? { scale: 1 } : k === 1 ? { scale: [1.04, 1.1, 1.04] } : { scale: 1 }}
-                transition={k === 1 && !reduced ? { duration: 14, ease: "easeInOut", repeat: Infinity } : { duration: 2, ease: EASE }}
-                className={`absolute inset-0 size-full object-cover ${k === 1 ? "contrast-[1.06] saturate-[1.08]" : ""}`}
-              />
-            )}
-          </motion.div>
-        );
-        return p.to ? (
-          <Link key={k} to={p.to} aria-label={p.alt} className="group block">{body}</Link>
-        ) : (
-          <div key={k}>{body}</div>
-        );
-      })}
+      {[0, 1, 2].map((k) => <Arch key={k} k={k} product={pieces[k]} loading={loading} />)}
     </div>
+  );
+}
+
+function Arch({ k, product, loading }: { k: number; product?: Product; loading: boolean }) {
+  const reduced = useReducedMotion();
+  const aspect = k === 1 ? 8 / 15 : 2 / 3;
+  const { url, failed } = useStill(product, aspect);
+  const spec = product ? specFromProduct(product) : null;
+  const bg = spec ? backdropCss(backdropFor(spec.metal, spec.gem)) : undefined;
+  // 3D still when available; the catalogue photo only if this device can't render 3D
+  const src = url ?? (failed ? product?.image : null);
+  const body = (
+    <motion.div
+      initial={{ clipPath: "inset(100% 0% 0% 0%)" }}
+      animate={{ clipPath: "inset(0% 0% 0% 0%)" }}
+      transition={{ duration: 1.3, ease: EASE, delay: 0.45 + k * 0.15 }}
+      className={`relative overflow-hidden bg-night ${k === 1 ? "aspect-[8/15]" : "aspect-[2/3]"}`}
+      style={{ borderRadius: "999px 999px 10px 10px", background: bg }}
+    >
+      {loading || !src ? (
+        <div className={`absolute inset-0 ${bg ? "animate-pulse opacity-60" : "skeleton"}`} />
+      ) : (
+        <motion.img
+          key={src}
+          src={src}
+          alt={product?.name ?? ""}
+          onError={(e) => { const img = e.currentTarget; const fb = fallbackImage(product); if (img.src !== fb) img.src = fb; }}
+          initial={{ opacity: 0, scale: 1.12 }}
+          animate={reduced ? { opacity: 1, scale: 1 } : k === 1 ? { opacity: 1, scale: [1.02, 1.07, 1.02] } : { opacity: 1, scale: 1 }}
+          transition={k === 1 && !reduced ? { opacity: { duration: 1.2 }, scale: { duration: 14, ease: "easeInOut", repeat: Infinity } } : { duration: 1.6, ease: EASE }}
+          className="absolute inset-0 size-full object-cover"
+        />
+      )}
+      {/* soft inner vignette ties the arch edge into the page */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 shadow-[inset_0_0_40px_rgba(0,0,0,.35)]" style={{ borderRadius: "inherit" }} />
+    </motion.div>
+  );
+  return product ? (
+    <Link to={`/product/${product.slug}`} aria-label={product.name} className="group block">{body}</Link>
+  ) : (
+    <div>{body}</div>
   );
 }
 
