@@ -4,6 +4,8 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 
 export default defineConfig({
+  // On Vercel the CRM is served under /crm on the shared domain; Render/local keep it at /.
+  base: process.env.VERCEL ? "/crm/" : "/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

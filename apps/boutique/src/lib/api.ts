@@ -1,4 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+// On Vercel the API shares the site's domain (/api/*), so production builds call it same-origin.
+const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://localhost:4000" : "");
 const TOKEN_KEY = "aurelia_token";
 
 export function getToken(): string | null {
