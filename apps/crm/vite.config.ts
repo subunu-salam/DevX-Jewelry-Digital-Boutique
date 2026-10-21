@@ -14,7 +14,8 @@ export default defineConfig({
       // the shop's 3D jewellery code — the CRM builds and previews models with exactly the same engine
       "@jewel3d": path.resolve(__dirname, "../boutique/src/lib/jewel3d"),
     },
-    dedupe: ["three"],
+    // packages/ui isn't a workspace (no node_modules of its own), so resolve its imports from this app
+    dedupe: ["three", "react", "react-dom", "motion", "lucide-react", "clsx", "tailwind-merge"],
   },
   server: {
     port: 5174,

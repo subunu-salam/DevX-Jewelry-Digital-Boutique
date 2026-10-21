@@ -10,6 +10,8 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
       "@ui": path.resolve(__dirname, "../../packages/ui/src"),
     },
+    // packages/ui isn't a workspace (no node_modules of its own), so resolve its imports from this app
+    dedupe: ["react", "react-dom", "motion", "lucide-react", "clsx", "tailwind-merge"],
   },
   server: {
     port: 5173,
