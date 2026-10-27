@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
-import { Heart } from "lucide-react";
+import { ArrowRight, Heart, Sparkles } from "lucide-react";
 import { cn } from "@ui";
 import { useStore } from "@/context/store";
 import type { Product } from "@/lib/types";
@@ -58,10 +58,16 @@ export function ProductCard({ product, size = "md", className, interactive }: Pr
           />
           {/* soft vignette that deepens on hover */}
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 transition-opacity duration-700 group-hover:opacity-100" />
-          <div className="absolute left-3 top-3 flex gap-1.5">
+          <div className="absolute left-3 top-3 flex flex-wrap gap-1.5 pr-10">
+            {interactive && product.category && <span className="rounded-full bg-ink/75 px-2.5 py-1 text-[9.5px] font-semibold uppercase tracking-[0.16em] text-on-ink backdrop-blur">{product.category.name}</span>}
             {product.isNew && <Badge tone="new">New</Badge>}
             {product.discount > 0 && <Badge tone="gold">−{product.discount}%</Badge>}
           </div>
+          {interactive && product.tryOn && (
+            <span className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-surface/95 px-2.5 py-1 text-[10px] font-semibold text-brand-deep shadow-sm backdrop-blur md:group-hover:opacity-0">
+              <Sparkles className="size-3" /> Try-on ready
+            </span>
+          )}
           {/* hover reveal: collection meta */}
           <div className="pointer-events-none absolute inset-x-3 bottom-3 hidden translate-y-2 items-center justify-between text-[11.5px] font-medium text-[#FFFDF8] opacity-0 transition-all duration-700 ease-[var(--ease-lux)] group-hover:translate-y-0 group-hover:opacity-100 md:flex">
             <span>{product.karat}K {product.metalColor}</span>
@@ -87,9 +93,23 @@ export function ProductCard({ product, size = "md", className, interactive }: Pr
       </button>
 
       <Link to={`/product/${product.slug}`} className="mt-3.5 block px-0.5">
+        {interactive && <div className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{product.karat}K {product.metalColor}{product.stoneType ? ` · ${product.stoneType}` : ""}</div>}
         <h3 className={cn("font-serif leading-tight text-foreground", size === "lg" ? "text-[22px]" : "text-[18px] md:text-[19px]")}>{product.name}</h3>
         <Price priceMode={product.priceMode} basePrice={product.basePrice} discount={product.discount} size="sm" className="mt-1" />
       </Link>
+
+      {interactive && (
+        <div className="mt-3 flex items-center gap-2 border-t border-border/80 px-0.5 pt-2.5 text-[11.5px] font-semibold">
+          {product.tryOn && (
+            <Link to={`/try-on/${product.slug}`} className="inline-flex items-center gap-1.5 text-foreground transition-colors hover:text-brand-deep">
+              <Sparkles className="size-3.5 text-brand-deep" /> Try on
+            </Link>
+          )}
+          <Link to={`/product/${product.slug}`} className="ml-auto inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground">
+            Details <ArrowRight className="size-3.5 transition-transform duration-500 group-hover:translate-x-0.5" />
+          </Link>
+        </div>
+      )}
     </motion.article>
   );
 }

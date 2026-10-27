@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  ArrowLeft, Camera, CalendarClock, Download, FlipHorizontal2, ImageUp, Loader2, Lock, RefreshCw,
+  ArrowLeft, ArrowRight, Camera, CalendarClock, ChevronsLeftRight, Download, FlipHorizontal2, ImageUp, Loader2, Lock, RefreshCw,
   RotateCcw, ScanFace, Share2, ShoppingBag, Sparkles, SwitchCamera, Video, Wand2,
 } from "lucide-react";
 import { cn } from "@ui";
@@ -21,6 +21,13 @@ const DISCLAIMER = "Virtual try-on is a visualization only. Size, fit, colour an
 
 /** The customer's photo is kept in memory only for this visit, so they can try several pieces. */
 let sessionPhoto: { url: string; w: number; h: number } | null = null;
+
+/** One-tap sample portraits so a customer can preview a piece before using their own photo. */
+const STUDIO_MODELS = [
+  { id: "front", label: "Front", desc: "Earrings · necklaces", src: "/studio/model-front.jpg", hand: false },
+  { id: "angled", label: "Three-quarter", desc: "Drops · pendants", src: "/studio/model-angled.jpg", hand: false },
+  { id: "hand", label: "Hand", desc: "Rings · bracelets", src: "/studio/model-hand.jpg", hand: true },
+] as const;
 
 interface Adjust { dx: number; dy: number; scale: number; rot: number; flip: boolean }
 const NO_ADJ: Adjust = { dx: 0, dy: 0, scale: 1, rot: 0, flip: false };
@@ -41,13 +48,43 @@ function Picker() {
   const shown = (items ?? []).filter((p) => type === "all" || p.tryOn!.type === type);
 
   return (
-    <div className="px-4 pb-6 pt-4">
+    <div className="px-4 pb-8 pt-4">
       <Link to="/ai" className="inline-flex items-center gap-2 text-[13px] font-semibold text-muted-foreground"><ArrowLeft className="size-4" /> AI Studio</Link>
-      <h1 className="mt-3 font-serif text-[40px] leading-none">Virtual try-on</h1>
-      <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">Choose a piece, then see it on your own photo or live camera.</p>
-      <PrivacyNote className="mt-3" />
 
-      <div className="no-scrollbar -mx-4 mt-5 flex gap-2 overflow-x-auto px-4">
+      {/* Editorial masthead */}
+      <motion.header initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={t(0.8)} className="relative mt-4 overflow-hidden rounded-[26px] bg-night text-on-night">
+        <img src="/studio/model-front.jpg" alt="" aria-hidden className="absolute inset-y-0 right-0 h-full w-[58%] object-cover object-[50%_20%] opacity-80" style={{ maskImage: "linear-gradient(to left, #000 45%, transparent)", WebkitMaskImage: "linear-gradient(to left, #000 45%, transparent)" }} />
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-brand/60 to-transparent" />
+        <div className="relative px-5 pb-6 pt-8">
+          <div className="flex items-center gap-2.5 text-[10px] font-semibold uppercase tracking-[0.32em] text-brand-soft"><span className="h-px w-6 bg-brand" /> Virtual fitting room</div>
+          <h1 className="mt-3 max-w-[62%] font-serif text-[42px] leading-[0.95]">Envisioned <span className="italic text-brand-soft">on you.</span></h1>
+          <p className="mt-3 max-w-[60%] text-[13px] leading-relaxed text-on-night/70">Live camera, your photo or a studio model — every piece is placed and scaled to you in real time.</p>
+          <div className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-on-night/15 bg-on-night/5 px-3 py-1.5 text-[11px] font-semibold backdrop-blur">
+            <Lock className="size-3 text-brand-soft" /> Runs on your device
+          </div>
+        </div>
+      </motion.header>
+
+      {/* How it works */}
+      <ol className="mt-5 grid grid-cols-3 gap-2.5">
+        {[
+          { n: "01", t: "Choose", d: "Pick a piece below" },
+          { n: "02", t: "Frame", d: "Camera, photo or model" },
+          { n: "03", t: "Compare", d: "Switch, slide, save" },
+        ].map((s) => (
+          <li key={s.n} className="rounded-[18px] border border-border bg-surface p-3">
+            <span className="font-serif text-[22px] leading-none text-brand-deep">{s.n}</span>
+            <span className="mt-1.5 block text-[12.5px] font-semibold">{s.t}</span>
+            <span className="block text-[11px] leading-snug text-muted-foreground">{s.d}</span>
+          </li>
+        ))}
+      </ol>
+
+      <div className="mt-7 flex items-baseline justify-between">
+        <h2 className="font-serif text-[26px] leading-none">Ready to try</h2>
+        <span className="text-[12px] tabular-nums text-muted-foreground">{items ? `${shown.length} ${shown.length === 1 ? "piece" : "pieces"}` : "…"}</span>
+      </div>
+      <div className="no-scrollbar -mx-4 mt-3 flex gap-2 overflow-x-auto px-4">
         {(["all", ...types] as const).map((k) => (
           <button key={k} onClick={() => setType(k)} className={cn("shrink-0 rounded-full border px-4 py-2 text-[13px] font-semibold capitalize transition-colors", type === k ? "border-ink bg-ink text-on-ink" : "border-border bg-surface text-foreground/75")}>
             {k === "all" ? "All" : LABEL[k]}
@@ -62,15 +99,21 @@ function Picker() {
             <Link to={`/try-on/${p.slug}`} className="group block">
               <div className="relative aspect-[4/5] overflow-hidden rounded-[18px] bg-champagne">
                 <JewelImage src={p.image} piece={p} alt={p.name} loading="lazy" className="transition-transform duration-[1200ms] ease-[var(--ease-lux)] group-hover:scale-105" />
-                <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-surface/95 px-2.5 py-1 text-[10.5px] font-semibold text-brand-deep"><Sparkles className="size-3" /> Try on</span>
+                <span className="absolute left-2.5 top-2.5 rounded-full bg-ink/80 px-2.5 py-1 text-[9.5px] font-semibold uppercase tracking-[0.16em] text-on-ink backdrop-blur">{LABEL[p.tryOn!.type]}</span>
+                <span className="absolute inset-x-2.5 bottom-2.5 flex items-center justify-between rounded-full bg-surface/95 py-1.5 pl-3 pr-1.5 text-[11.5px] font-semibold text-foreground shadow-sm backdrop-blur">
+                  <span className="inline-flex items-center gap-1.5"><Sparkles className="size-3.5 text-brand-deep" /> Try on</span>
+                  <span className="flex size-6 items-center justify-center rounded-full bg-ink text-on-ink transition-transform duration-500 group-hover:translate-x-0.5"><ArrowRight className="size-3.5" /></span>
+                </span>
               </div>
-              <div className="mt-2.5 font-serif text-[17px] leading-tight">{p.name}</div>
+              <div className="mt-2.5 text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">{p.karat}K {p.metalColor}</div>
+              <div className="mt-0.5 font-serif text-[17px] leading-tight">{p.name}</div>
               <Price priceMode={p.priceMode} basePrice={p.basePrice} discount={p.discount} size="sm" />
             </Link>
           </motion.div>
         ))}
       </div>
       {items && shown.length === 0 && <p className="mt-10 text-center text-muted-foreground">No pieces are set up for try-on yet.</p>}
+      <Disclaimer className="mt-8 text-center" />
     </div>
   );
 }
@@ -100,6 +143,9 @@ function Studio({ slug }: { slug: string }) {
   const [status, setStatus] = useState<"idle" | "detecting" | "placed" | "manual">("idle");
   const [adj, setAdj] = useState<Adjust>(NO_ADJ);
   const [compare, setCompare] = useState(false);
+  /** Before/after split position in % (null = off). Photo mode only. */
+  const [split, setSplit] = useState<number | null>(null);
+  const [modelBusy, setModelBusy] = useState<string | null>(null);
   /** Scene brightness (live camera) so the metal isn't glowing in a dim room. */
   const [light, setLight] = useState(1);
   /** 3D AR for every piece: rings/bracelets on the hand, earrings on the lobes, necklaces at the neck. */
@@ -230,7 +276,17 @@ function Studio({ slug }: { slug: string }) {
     setAdj(NO_ADJ);
     setPhoto(j);
     setAiResult(null);
+    setSplit(null);
     setPhase("photo");
+  }
+  async function loadModel(id: string, src: string) {
+    setModelBusy(id);
+    try {
+      const blob = await fetch(src).then((r) => { if (!r.ok) throw new Error(); return r.blob(); });
+      const url = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(blob); });
+      await usePhoto(url);
+    } catch { toast({ title: "Couldn't load the studio model" }); }
+    finally { setModelBusy(null); }
   }
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -522,6 +578,30 @@ function Studio({ slug }: { slug: string }) {
               </div>
             </div>
 
+            <div className="mt-6">
+              <div className="flex items-baseline justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-brand-deep">Or preview on a studio model</span>
+                <span className="text-[11px] text-muted-foreground">One tap · no camera</span>
+              </div>
+              <div className="mt-2.5 grid grid-cols-3 gap-2.5">
+                {[...STUDIO_MODELS].sort((a, b) => Number(b.hand === handFirst) - Number(a.hand === handFirst)).map((m) => {
+                  const fits = m.hand === handFirst;
+                  return (
+                    <button key={m.id} onClick={() => loadModel(m.id, m.src)} disabled={!!modelBusy} className={cn("group relative block overflow-hidden rounded-[18px] bg-night text-left transition", !fits && "opacity-60")}>
+                      <img src={m.src} alt="" loading="lazy" className="aspect-[3/4] w-full object-cover transition-transform duration-[1200ms] ease-[var(--ease-lux)] group-hover:scale-105" />
+                      <span className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+                      {fits && <span className="absolute left-2 top-2 rounded-full bg-surface/95 px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.14em] text-brand-deep">Best fit</span>}
+                      <span className="absolute inset-x-2 bottom-2 text-white">
+                        <span className="block font-serif text-[15px] leading-tight">{m.label}</span>
+                        <span className="block text-[10px] opacity-80">{m.desc}</span>
+                      </span>
+                      {modelBusy === m.id && <span className="absolute inset-0 flex items-center justify-center bg-black/40"><Loader2 className="size-5 animate-spin text-white" /></span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="mt-7">{rail}</div>
             <PrivacyNote className="mt-5" />
             <Disclaimer className="mt-2" />
@@ -546,6 +626,7 @@ function Studio({ slug }: { slug: string }) {
                 ) : photo && (
                   <img ref={(el) => { (imgRef as React.MutableRefObject<HTMLImageElement | null>).current = el; setImgEl(el); }} src={photo.url} alt="Your photo" draggable={false} onLoad={() => { lmsRef.current = null; detectPhoto(); }} className="absolute inset-0 size-full" />
                 )}
+                <div className="pointer-events-none absolute inset-0" style={phase === "photo" && split != null ? { clipPath: `inset(0 0 0 ${split}%)` } : undefined}>
                 <AnimatePresence>
                   {ready && auto && !compare && asset && !show3d && auto.items.map((p, i) => {
                     const src = asset.halves?.[i] ?? asset.src;
@@ -578,7 +659,22 @@ function Studio({ slug }: { slug: string }) {
                   })}
                 </AnimatePresence>
                 {show3d && <canvas ref={setArCanvas} className="pointer-events-none absolute inset-0 size-full" style={{ visibility: compare ? "hidden" : "visible" }} />}
+                </div>
               </div>
+
+              {/* Before / after split */}
+              {phase === "photo" && split != null && (
+                <div className="absolute inset-0 z-20">
+                  <div className="pointer-events-none absolute inset-y-0 w-[2px] -translate-x-1/2 bg-surface shadow-[0_0_12px_rgba(0,0,0,.45)]" style={{ left: `${split}%` }}>
+                    <span className="absolute left-1/2 top-1/2 flex size-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-brand bg-surface text-foreground shadow-lg">
+                      <ChevronsLeftRight className="size-4" />
+                    </span>
+                  </div>
+                  <span className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white backdrop-blur">Before</span>
+                  <span className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-brand px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white">With piece</span>
+                  <input type="range" min={0} max={100} step={0.5} value={split} aria-label="Before and after comparison" onChange={(e) => setSplit(Number(e.target.value))} onPointerDown={(e) => e.stopPropagation()} className="absolute inset-0 size-full cursor-ew-resize opacity-0" />
+                </div>
+              )}
 
               {/* 3D: guided scan, loading and errors */}
               {show3d && ls && <ScanOverlay state={ls} onSkip={() => liveRef.current?.skipScan()} onUse2d={() => setUse3d(false)} live={phase === "live"} />}
@@ -647,6 +743,7 @@ function Studio({ slug }: { slug: string }) {
                   {spec3d?.kind === "ring" && <Chip onClick={() => setFlip((f) => !f)}><FlipHorizontal2 className="size-3.5" /> {flip ? "Stone on back of hand" : "Stone on palm side"}</Chip>}
                   {phase === "live" && <Chip onClick={() => liveRef.current?.startScan()}><ScanFace className="size-3.5" /> Rescan</Chip>}
                   {phase === "photo" && liveSupported && <Chip onClick={() => startCamera(handFirst ? "environment" : "user")}><Video className="size-3.5" /> Go live</Chip>}
+                  {phase === "photo" && <Chip onClick={() => setSplit((v) => (v == null ? 50 : null))}><ChevronsLeftRight className="size-3.5" /> {split == null ? "Before / after" : "Hide slider"}</Chip>}
                   {phase === "photo" && <Chip onClick={() => setPhase("choose")}><RefreshCw className="size-3.5" /> New photo</Chip>}
                 </div>
               </div>
@@ -664,6 +761,7 @@ function Studio({ slug }: { slug: string }) {
                   <Chip onPointerDown={() => setCompare(true)} onPointerUp={() => setCompare(false)} onPointerLeave={() => setCompare(false)}>Hold to compare</Chip>
                   {phase === "photo" && <Chip onClick={() => setAdj((a) => ({ ...a, flip: !a.flip }))}><FlipHorizontal2 className="size-3.5" /> Flip</Chip>}
                   {phase === "photo" && liveSupported && <Chip onClick={() => startCamera(handFirst ? "environment" : "user")}><Video className="size-3.5" /> Go live</Chip>}
+                  {phase === "photo" && <Chip onClick={() => setSplit((v) => (v == null ? 50 : null))}><ChevronsLeftRight className="size-3.5" /> {split == null ? "Before / after" : "Hide slider"}</Chip>}
                   {phase === "photo" && <Chip onClick={() => setPhase("choose")}><RefreshCw className="size-3.5" /> New photo</Chip>}
                 </div>
               </div>

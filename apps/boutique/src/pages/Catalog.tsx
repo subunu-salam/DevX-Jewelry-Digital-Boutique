@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
-import { SlidersHorizontal } from "lucide-react";
+import { ArrowRight, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import type { Product, Storefront } from "@/lib/types";
 import {
@@ -39,6 +39,7 @@ export default function Catalog() {
   const category = get("category");
   const sort = get("sort") || "newest";
   const onlyNew = get("filter") === "new";
+  const onlyTryOn = get("tryon") === "1";
 
   useEffect(() => { api.get<Storefront>("/api/public/storefront").then(setStore).catch(() => {}); }, []);
 
@@ -65,8 +66,13 @@ export default function Catalog() {
   const setExact = (key: string, value: string) => { const n = new URLSearchParams(params); value ? n.set(key, value) : n.delete(key); setParams(n, { replace: true }); };
   const clearAll = () => { const n = new URLSearchParams(); if (search) n.set("search", search); if (category) n.set("category", category); setParams(n, { replace: true }); };
 
+  // Try-on readiness is a client-side refinement of the server result.
+  const shown = useMemo(() => (onlyTryOn ? products.filter((p) => p.tryOn) : products), [products, onlyTryOn]);
+  const tryOnCount = useMemo(() => products.filter((p) => p.tryOn).length, [products]);
+
   const active = FILTER_KEYS.filter((k) => params.get(k)).map((k) => ({ key: k, label: labelFor(k, params.get(k)!, store) }));
   if (onlyNew) active.unshift({ key: "filter" as never, label: "New arrivals" });
+  if (onlyTryOn) active.unshift({ key: "tryon" as never, label: "Try-on ready" });
 
   const categoryName = store?.categories.find((c) => c.slug === category)?.name;
   const title = search ? `“${search}”` : categoryName ?? (onlyNew ? "New arrivals" : "Jewellery");
@@ -136,8 +142,8 @@ export default function Catalog() {
           <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: t(0.9) } }} className="mt-5 inline-flex items-center gap-2 rounded-full border border-on-night/15 bg-on-night/5 px-3.5 py-1.5 text-[12px] font-semibold backdrop-blur">
             <span className="size-1.5 rounded-full bg-brand" />
             <AnimatePresence mode="wait">
-              <motion.span key={loading ? "l" : products.length} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.3 }}>
-                {loading ? "Gathering pieces…" : `${products.length} ${products.length === 1 ? "piece" : "pieces"}`}
+              <motion.span key={loading ? "l" : shown.length} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.3 }}>
+                {loading ? "Gathering pieces…" : `${shown.length} ${shown.length === 1 ? "piece" : "pieces"}`}
               </motion.span>
             </AnimatePresence>
           </motion.div>
@@ -158,6 +164,14 @@ export default function Catalog() {
       {/* Categories */}
       <LayoutGroup id="cats">
         <div className="no-scrollbar -mx-4 mt-6 flex gap-2 overflow-x-auto px-4 md:mx-0 md:px-0">
+          <button
+            onClick={() => setExact("tryon", onlyTryOn ? "" : "1")}
+            aria-pressed={onlyTryOn}
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-4 py-2 text-[13px] font-semibold transition-colors duration-300 ${onlyTryOn ? "border-brand bg-brand text-white" : "border-brand/40 bg-surface text-brand-deep"}`}
+          >
+            <Sparkles className="size-3.5" /> Try-on ready
+          </button>
+          <span aria-hidden className="mx-1 w-px shrink-0 self-stretch bg-border" />
           <FilterChip active={!category} onClick={() => setExact("category", "")} layoutGroup="cat">All</FilterChip>
           {store?.categories.map((c) => (
             <FilterChip key={c.id} active={category === c.slug} onClick={() => setExact("category", c.slug)} layoutGroup="cat">{c.name}</FilterChip>
@@ -178,13 +192,13 @@ export default function Catalog() {
 
         <div>
           <div className="mb-6 flex min-h-8 flex-wrap items-center gap-2">
-            <span className="mr-2 text-[13px] text-muted-foreground tabular-nums">{loading ? "Loading pieces…" : `${products.length} ${products.length === 1 ? "piece" : "pieces"}`}</span>
+            <span className="mr-2 text-[13px] text-muted-foreground tabular-nums">{loading ? "Loading pieces…" : `${shown.length} ${shown.length === 1 ? "piece" : "pieces"}`}</span>
             <AnimatePresence>
               {active.map((a) => <ActiveFilter key={a.key} label={a.label} onRemove={() => setExact(a.key, "")} />)}
             </AnimatePresence>
           </div>
           <ProductGrid
-            products={products}
+            products={shown}
             loading={loading}
             interactive
             columns={3}
@@ -196,6 +210,21 @@ export default function Catalog() {
               </motion.div>
             }
           />
+
+          {/* Closing invitation to the fitting room */}
+          {!loading && tryOnCount > 0 && (
+            <motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={t(0.8)} className="relative mt-12 overflow-hidden rounded-[24px] bg-night p-6 text-on-night">
+              <img src="/studio/model-angled.jpg" alt="" aria-hidden className="absolute inset-y-0 right-0 h-full w-1/2 object-cover object-top opacity-70" style={{ maskImage: "linear-gradient(to left, #000 40%, transparent)", WebkitMaskImage: "linear-gradient(to left, #000 40%, transparent)" }} />
+              <div className="relative max-w-[62%]">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-brand-soft">Virtual fitting room</div>
+                <h3 className="mt-2 font-serif text-[28px] leading-[1.02]">See how they look <span className="italic">on you.</span></h3>
+                <p className="mt-2 text-[12.5px] leading-relaxed text-on-night/70">{tryOnCount} {tryOnCount === 1 ? "piece is" : "pieces are"} ready to try — live, on your photo or a studio model. Nothing is uploaded.</p>
+                <Link to="/try-on" className="mt-4 inline-flex items-center gap-2 rounded-full bg-surface px-4 py-2.5 text-[12.5px] font-semibold text-foreground transition-transform active:scale-95">
+                  <Sparkles className="size-3.5 text-brand-deep" /> Launch try-on <ArrowRight className="size-3.5" />
+                </Link>
+              </div>
+            </motion.div>
+          )}
         </div>
       </div>
 
@@ -206,7 +235,7 @@ export default function Catalog() {
         footer={
           <div className="flex gap-3">
             <LuxuryButton variant="outline" className="flex-1" onClick={clearAll}>Clear</LuxuryButton>
-            <LuxuryButton className="flex-[2]" onClick={() => setDrawer(false)}>Show {products.length} pieces</LuxuryButton>
+            <LuxuryButton className="flex-[2]" onClick={() => setDrawer(false)}>Show {shown.length} pieces</LuxuryButton>
           </div>
         }
       >
